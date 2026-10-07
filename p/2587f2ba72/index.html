@@ -53,15 +53,15 @@ h2{font-size:clamp(24px,6.4vw,32px);line-height:1.35}
 .sub{color:var(--ink2);margin:14px 0 0}
 .sub.one{font-size:14px;text-wrap:pretty}
 .cover{position:relative;color:#fff;background:#214d43;padding:0}
-.cover .hero{position:relative;margin:0}
-/* 사진(4:3)은 그대로 두고, 그 아래로 사진 끝부분을 거울처럼 이어 붙여(.ext) 글씨 뒤에서 서서히 초록이 됨.
+.cover .hero{position:relative;margin:0;overflow:hidden}
+/* 사진(4:3)은 그대로(그라데이션 없음), 그 아래로 사진 맨 아래 색을 길게 늘여 흐리게 이어 붙여(.ext) 글씨가 시작하는 높이부터 서서히 초록이 됨.
    글씨 시작 위치는 원래 사진 끝 + 22px 그대로 */
 .cover .hero img{display:block;width:100%;aspect-ratio:4/3;max-height:62svh;object-fit:cover}
-.cover .hero .ext{height:120px;background-size:100% auto;background-position:center bottom;transform:scaleY(-1)}
-.cover .hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:220px;
-background:linear-gradient(180deg,rgba(33,77,67,0) 0%,rgba(33,77,67,.25) 30%,rgba(33,77,67,.6) 55%,
-rgba(33,77,67,.88) 78%,#214d43 100%)}
-.cover .hero+.wrap{margin-top:-120px}
+.cover .hero .ext{position:relative;height:194px;margin-top:-24px;background-size:100% 3000%;background-position:center bottom;filter:blur(10px);transform:scaleX(1.08);-webkit-mask-image:linear-gradient(transparent,#000 24px);mask-image:linear-gradient(transparent,#000 24px)}
+.cover .hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:170px;
+background:linear-gradient(180deg,rgba(33,77,67,0) 0%,rgba(33,77,67,.3) 25%,rgba(33,77,67,.62) 50%,
+rgba(33,77,67,.88) 75%,#214d43 100%)}
+.cover .hero+.wrap{margin-top:-170px}
 .cover .hero+.wrap .ch-head{text-shadow:0 1px 6px rgba(0,0,0,.3)}
 .cover .wrap{position:relative;padding-top:22px;padding-bottom:40px;width:100%}
 .cover.no-photo .wrap{padding-top:90px}
