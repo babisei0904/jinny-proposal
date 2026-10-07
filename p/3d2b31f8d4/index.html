@@ -54,10 +54,15 @@ h2{font-size:clamp(24px,6.4vw,32px);line-height:1.35}
 .sub.one{font-size:14px;text-wrap:pretty}
 .cover{position:relative;color:#fff;background:#214d43;padding:0}
 .cover .hero{position:relative;margin:0}
+/* 사진(4:3)은 그대로 두고, 그 아래로 사진 끝부분을 거울처럼 이어 붙여(.ext) 글씨 뒤에서 서서히 초록이 됨.
+   글씨 시작 위치는 원래 사진 끝 + 22px 그대로 */
 .cover .hero img{display:block;width:100%;aspect-ratio:4/3;max-height:62svh;object-fit:cover}
-.cover .hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:60%;
-background:linear-gradient(180deg,rgba(33,77,67,0) 0%,rgba(33,77,67,.18) 30%,rgba(33,77,67,.5) 55%,
-rgba(33,77,67,.82) 78%,#214d43 100%)}
+.cover .hero .ext{height:120px;background-size:100% auto;background-position:center bottom;transform:scaleY(-1)}
+.cover .hero::after{content:"";position:absolute;left:0;right:0;bottom:0;height:220px;
+background:linear-gradient(180deg,rgba(33,77,67,0) 0%,rgba(33,77,67,.25) 30%,rgba(33,77,67,.6) 55%,
+rgba(33,77,67,.88) 78%,#214d43 100%)}
+.cover .hero+.wrap{margin-top:-120px}
+.cover .hero+.wrap .ch-head{text-shadow:0 1px 6px rgba(0,0,0,.3)}
 .cover .wrap{position:relative;padding-top:22px;padding-bottom:40px;width:100%}
 .cover.no-photo .wrap{padding-top:90px}
 .cover .ch-head small{color:rgba(255,255,255,.75)}.cover .ch-head b{color:#f1c3a8;font-size:15px}
@@ -152,7 +157,7 @@ padding:4px 10px;border-radius:6px}
 <header class="top"><div class="wrap"><div class="brand">지니맘 × 올리워터파티룸</div><nav class="dots"><a href="#c1" class=on>1</a><a href="#c2">2</a><a href="#c3">3</a><a href="#c4">4</a><a href="#c5">5</a><a href="#c6">6</a></nav></div></header>
 
 <section class="ch cover" id="c1">
-<figure class="hero"><img src="https://search.pstatic.net/common/?src=https%3A%2F%2Fldb-phinf.pstatic.net%2F20250327_215%2F1743060567635vy56e_JPEG%2F1000003515.jpg&amp;type=w750" alt="올리워터파티룸"></figure><div class="wrap">
+<figure class="hero"><img src="https://search.pstatic.net/common/?src=https%3A%2F%2Fldb-phinf.pstatic.net%2F20250327_215%2F1743060567635vy56e_JPEG%2F1000003515.jpg&amp;type=w750" alt="올리워터파티룸"><div class="ext" style="background-image:url(&quot;https://search.pstatic.net/common/?src=https%3A%2F%2Fldb-phinf.pstatic.net%2F20250327_215%2F1743060567635vy56e_JPEG%2F1000003515.jpg&amp;type=w750&quot;)"></div></figure><div class="wrap">
 
 <div class="ch-head"><div><small>JINNY MOM / SPACE COLLABORATION</small><b>이용권 이벤트 제안</b></div><div class="ch-no">01</div></div>
 <p class="to">올리워터파티룸 사장님께</p>
