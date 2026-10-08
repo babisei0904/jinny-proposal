@@ -4,10 +4,12 @@
 //   /token      → https://oauth2.cert.toss.im/token
 //   /openapi/*  → https://sharelink.toss.im/openapi/*
 // 실행: PROXY_KEY=긴비밀값 PORT=8080 node server.js   (Node 18 이상, 외부 패키지 없음)
+// 우분투 서버라면 setup.sh 한 번이면 HTTPS(Caddy)·자동 실행(systemd)까지 설정된다.
 import http from "node:http";
 
 const PROXY_KEY = process.env.PROXY_KEY;
 const PORT = Number(process.env.PORT || 8080);
+const HOST = process.env.HOST || "0.0.0.0"; // setup.sh는 127.0.0.1로 두고 앞단 Caddy가 HTTPS를 받는다
 if (!PROXY_KEY) throw new Error("PROXY_KEY 환경변수를 설정하세요");
 
 const target = (path) =>
@@ -42,4 +44,4 @@ http
       res.writeHead(502, { "Content-Type": "application/json" }).end(JSON.stringify({ error: e.message }));
     }
   })
-  .listen(PORT, () => console.log(`toss-proxy listening on :${PORT}`));
+  .listen(PORT, HOST, () => console.log(`toss-proxy listening on ${HOST}:${PORT}`));

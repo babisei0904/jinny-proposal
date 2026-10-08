@@ -58,37 +58,63 @@ npx wrangler secret put COUPANG_SECRET_KEY  # (선택)
 npx wrangler deploy
 ```
 
-토스 쉐어링크 자동 발급까지 쓰려면 아래 3)을 마친 뒤 이렇게 등록해요.
-
-```bash
-npx wrangler secret put TOSS_ACCESS_KEY
-npx wrangler secret put TOSS_SECRET_KEY
-npx wrangler secret put TOSS_PUBLISHER_ID   # 어드민 API 연동 화면의 "회원 연동 ID"
-npx wrangler secret put TOSS_PROXY_URL      # 예: http://고정IP:8080
-npx wrangler secret put TOSS_PROXY_KEY
-npx wrangler deploy
-```
-
 배포가 끝나면 `https://threads-autopost.<계정>.workers.dev` 형태의 주소가 나와요.
 
 ### 3) (선택) 토스 쉐어링크 자동 발급
 
 [토스 쉐어링크 Open API](https://sharelink-docs.toss.im/developers/open-api.md)를 쓰면 방장 링크를 붙여넣는 순간 **내 쉐어링크가 자동으로 발급**돼요.
-스레드 게시 자동화는 공식적으로 허용되는 용도예요. 단, 조건이 두 가지 있어요.
+스레드 게시 자동화는 공식적으로 허용되는 용도예요.
 
-1. **사업자 승인이 필요해요.** 개인사업자(간이·일반)나 법인만 승인받을 수 있고, 비사업자 개인은 안 돼요.
-   - 신청: sharelink.toss.im 크리에이터 어드민 → **연동 → API 키 발급**
-   - 서비스 유형은 "웹사이트"나 SNS, 용도는 "스레드 게시 자동화"로 적어요.
-   - 검수는 영업일 5일 이내예요.
-2. **고정 IP 서버가 필요해요.** 토스는 등록한 IP에서 오는 호출만 받는데, Cloudflare Worker는 IP가 계속 바뀌어요.
-   그래서 고정 IP가 있는 작은 서버에서 `toss-proxy/server.js`를 돌려서 중계해요. Node 18 이상만 있으면 되고 외부 패키지는 없어요.
-   - 서버 후보: Oracle Cloud 무료 VM, 월 몇천 원짜리 VPS(Vultr·Lightsail 등)
-   - 실행: `PROXY_KEY=긴비밀값 PORT=8080 node server.js`
-   - 그 서버의 공인 IP를 토스 어드민의 **출발지 IP**에 등록해요.
+**준비물**
+- 사업자등록: 개인사업자(간이·일반)나 법인만 승인돼요. 비사업자 개인은 안 돼요.
+- 고정 IP 서버 1대: 토스는 등록한 IP에서 오는 호출만 받는데, Cloudflare Worker는 IP가 계속 바뀌어요.
 
-같은 상품의 링크는 30일 동안 저장해 두고 다시 써요. 토스 문서가 그렇게 권장해요.
-방장 링크에서는 상품 그룹 번호만 알 수 있어서, 대표 옵션으로 링크가 발급돼요.
-발급되면 앱에 `✅ 내 링크 발급: 상품명 · 가격`이 떠요. 원문 옵션(예: 40병)과 맞는지 확인하세요.
+**A. API 사용 신청** — 검수는 영업일 5일 이내
+1. sharelink.toss.im 크리에이터 어드민 → **연동 → API 키 발급**에서 신청해요.
+2. 서비스 유형은 블로그/웹사이트 중 고르고, 서비스 URL에는 내 스레드 프로필 주소를 넣어요.
+3. 사용 목적에는 "본인 스레드 계정에 핫딜 게시물을 올릴 때 쉐어링크를 자동 발급하는 게시 자동화"라고 적어요.
+4. 앱 화면 캡처를 첨부하면 검수에 도움이 돼요.
+
+**B. 고정 IP 중계 서버 만들기** — 검수 기다리는 동안 해두면 좋아요
+1. 우분투(22.04/24.04) 서버를 하나 만들어요.
+   - 무료: Oracle Cloud 무료 VM. 네트워크 보안 목록에서 80·443 포트를 열어야 해요.
+   - 유료: AWS Lightsail이나 Vultr처럼 월 몇천 원짜리 서버
+   - 공인 IP는 고정으로 설정해요. Oracle은 "예약된 공인 IP", Lightsail은 "고정 IP"예요.
+2. https://www.duckdns.org 에서 무료 도메인을 만들고, 서버 IP를 연결해요.
+   - 예: `jinny-toss.duckdns.org`
+   - Worker는 IP 주소로 직접 호출할 수 없고, 키를 안전하게 보내려면 HTTPS도 필요해서 도메인이 있어야 해요.
+3. 서버에 접속해서 아래를 실행해요.
+   ```bash
+   git clone https://github.com/babisei0904/jinny-proposal.git
+   cd jinny-proposal/toss-proxy
+   sudo bash setup.sh jinny-toss.duckdns.org
+   ```
+   설치가 끝나면 **등록할 IP**, `TOSS_PROXY_URL`, `TOSS_PROXY_KEY`가 출력돼요. 메모해 두세요.
+4. `curl https://jinny-toss.duckdns.org/healthz`를 실행해서 `ok`가 나오면 정상이에요.
+
+**C. 승인 후 키 받기**
+1. 어드민의 **연동 → API 키 발급** 화면에서 아래 세 가지를 확인해요.
+   - **Access Key**
+   - **Secret Key**
+   - **회원 연동 ID**
+2. 같은 화면의 **출발지 IP**에 B에서 출력된 IP를 등록해요.
+
+**D. Worker에 등록**
+```bash
+cd worker
+npx wrangler secret put TOSS_ACCESS_KEY
+npx wrangler secret put TOSS_SECRET_KEY
+npx wrangler secret put TOSS_PUBLISHER_ID   # 회원 연동 ID
+npx wrangler secret put TOSS_PROXY_URL      # https://jinny-toss.duckdns.org
+npx wrangler secret put TOSS_PROXY_KEY      # setup.sh가 출력한 값
+npx wrangler deploy
+```
+폰 앱 ⚙︎ → **연결 확인**을 눌러 `✅ 토스 변환`이 뜨면 끝이에요.
+
+**알아둘 점**
+- 같은 상품의 링크는 30일 동안 저장해 두고 다시 써요. 토스 문서가 그렇게 권장해요.
+- 방장 링크에서는 상품 그룹 번호만 알 수 있어서, 대표 옵션으로 링크가 발급돼요.
+- 발급되면 앱에 `✅ 내 링크 발급: 상품명 · 가격`이 떠요. 원문 옵션(예: 40병)과 맞는지 확인하세요.
 
 ### 4) 폰에서 연결
 
