@@ -41,7 +41,9 @@ URL="$(printf '%s' "$deploy_out" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.de
 
 put() { printf '%s' "$2" | npx wrangler secret put "$1" >/dev/null && echo "  ✅ $1 등록"; }
 ask() {
-  local v
+  local v _
+  # 이전 단계 진행 중에 미리 붙여넣은 입력이 다음 질문의 답으로 들어가지 않게 비운다
+  while read -r -s -t 0.1 _; do :; done
   read -r -s -p "  $2 (없으면 그냥 Enter): " v; echo
   if [[ -n "$v" ]]; then put "$1" "$v"; fi
 }
@@ -53,6 +55,7 @@ if ! npx wrangler secret list 2>/dev/null | grep -q APP_PASSWORD; then
   put APP_PASSWORD "$PW"
   echo "  📱 폰 앱에 넣을 비밀번호: $PW   ← 메모해 두세요"
 fi
+echo "  (하나 붙여넣고 Enter → '✅ 등록'이 뜬 뒤에 다음 값을 붙여넣으세요)"
 ask COUPANG_ACCESS_KEY  "쿠팡 Access Key"
 ask COUPANG_SECRET_KEY  "쿠팡 Secret Key"
 ask THREADS_ACCESS_TOKEN "쓰레드 장기 토큰"
