@@ -344,11 +344,24 @@ async function resolveCoupangUrl(link) {
     }
     const r = await fetch(current, { redirect: "manual", headers: { "User-Agent": UA } });
     const loc = r.headers.get("Location");
-    if (!loc) break;
+    if (!loc) {
+      // link.coupang.com 단축링크는 302가 아니라 "쿠팡으로 이동중" 페이지(앱 스킴 안에 productId)를 돌려준다
+      const productId = extractCoupangProductId(await r.text());
+      if (productId) return `https://www.coupang.com/vp/products/${productId}`;
+      break;
+    }
     current = new URL(loc, current).href;
   }
-  if (/coupang\.com/.test(current)) return current;
-  throw new HttpError(400, "쿠팡 상품 링크를 찾지 못했어요");
+  throw new HttpError(400, "쿠팡 상품 번호를 찾지 못했어요. 내 링크를 직접 붙여넣어 주세요.");
+}
+
+function extractCoupangProductId(html) {
+  let s = html.replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  for (let i = 0; i < 3; i++) {
+    try { s = decodeURIComponent(s); } catch { break; }
+  }
+  const m = s.match(/vp\/products\/(\d+)/) || s.match(/[?&]productId=(\d+)/);
+  return m ? m[1] : null;
 }
 
 async function hmacHex(secret, message) {
