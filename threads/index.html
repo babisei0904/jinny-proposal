@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="핫딜발행">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>핫딜 쓰레드 발행</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>핫딜 → 쓰레드</h1>
+  <span id="conn" class="conn" title="연결 상태">●</span>
+  <button id="btnSettings" class="icon-btn" aria-label="설정">⚙︎</button>
+</header>
+
+<main>
+  <!-- 1. 원문 -->
+  <section class="card">
+    <div class="row-head">
+      <h2><span class="step">1</span>카톡 원문</h2>
+      <div class="actions">
+        <button id="btnPasteRaw" class="chip">📋 붙여넣기</button>
+        <button id="btnReset" class="chip ghost">새로</button>
+      </div>
+    </div>
+    <textarea id="raw" rows="6" placeholder="카톡방 핫딜 글을 통째로 붙여넣으세요"></textarea>
+    <div id="parsed" class="parsed" hidden></div>
+    <button id="btnMake" class="primary">✨ 후킹 문구 만들기</button>
+  </section>
+
+  <!-- 2. 본문 -->
+  <section class="card">
+    <h2><span class="step">2</span>본문 (후킹 문구)</h2>
+    <div id="hooks" class="hooks"></div>
+    <textarea id="body" rows="4" placeholder="본문 — 후보를 누르거나 직접 쓰세요"></textarea>
+    <div class="count"><span id="bodyCount">0</span>/500</div>
+  </section>
+
+  <!-- 3. 사진 -->
+  <section class="card">
+    <h2><span class="step">3</span>사진 <small>(0~2장)</small></h2>
+    <div id="photos" class="photos"></div>
+    <div class="actions wrap">
+      <label class="chip">🖼️ 앨범에서 추가<input id="filePick" type="file" accept="image/*" multiple hidden></label>
+      <button id="btnOg" class="chip">🛍️ 상품 이미지 가져오기</button>
+    </div>
+  </section>
+
+  <!-- 4. 댓글 -->
+  <section class="card">
+    <h2><span class="step">4</span>댓글 (광고 안내 + 내 링크)</h2>
+    <div class="store-tabs" role="tablist">
+      <button data-store="toss" class="tab">토스쇼핑</button>
+      <button data-store="coupang" class="tab">쿠팡</button>
+      <button data-store="etc" class="tab">기타</button>
+    </div>
+    <label class="lbl" for="myLink">내 쉐어링크</label>
+    <div class="link-row">
+      <input id="myLink" type="url" inputmode="url" placeholder="https://toss.shopping/... 또는 쿠팡 파트너스 링크">
+      <button id="btnPasteLink" class="chip">📋</button>
+    </div>
+    <div class="actions wrap">
+      <a id="btnOpenOrig" class="chip" target="_blank" rel="noopener">↗︎ 원본 상품 열기</a>
+      <button id="btnConvert" class="chip" hidden>🔁 쿠팡 내 링크로 변환</button>
+    </div>
+    <p id="linkHint" class="hint"></p>
+    <label class="lbl" for="reply">댓글 미리보기</label>
+    <textarea id="reply" rows="4"></textarea>
+    <div class="count"><span id="replyCount">0</span>/500</div>
+  </section>
+
+  <section id="history" class="card" hidden>
+    <h2>최근 발행</h2>
+    <ul id="historyList" class="history"></ul>
+  </section>
+</main>
+
+<footer class="bar">
+  <button id="btnPublish" class="publish">🚀 쓰레드에 발행</button>
+  <button id="btnIntent" class="chip ghost small">앱으로 열기(텍스트만)</button>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<dialog id="settings">
+  <form method="dialog" class="settings">
+    <h2>설정</h2>
+    <label class="lbl">서버 주소 (Cloudflare Worker)
+      <input id="sWorker" type="url" placeholder="https://threads-autopost.xxx.workers.dev">
+    </label>
+    <label class="lbl">앱 비밀번호
+      <input id="sKey" type="password" autocomplete="off">
+    </label>
+    <button type="button" id="btnTest" class="chip">연결 확인</button>
+    <p id="testResult" class="hint"></p>
+
+    <label class="lbl">토스쇼핑 안내 문구
+      <textarea id="sDiscToss" rows="2"></textarea>
+    </label>
+    <label class="lbl">쿠팡 안내 문구
+      <textarea id="sDiscCoupang" rows="2"></textarea>
+    </label>
+    <label class="lbl">기타 안내 문구
+      <textarea id="sDiscEtc" rows="2"></textarea>
+    </label>
+    <label class="lbl">링크 앞 문구
+      <input id="sLinkPrefix" type="text">
+    </label>
+    <label class="check"><input id="sAutoOg" type="checkbox"> 사진이 없으면 상품 이미지 자동으로 넣기</label>
+    <div class="actions end">
+      <button value="cancel" class="chip ghost">닫기</button>
+      <button id="btnSaveSettings" value="save" class="chip solid">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
