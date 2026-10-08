@@ -59,7 +59,7 @@ npx wrangler secret put COUPANG_SECRET_KEY  # (선택)
 npx wrangler deploy
 ```
 
-토스 쉐어링크 자동 발급까지 쓰려면 아래 4)를 마친 뒤 이렇게 등록해요.
+토스 쉐어링크 자동 발급까지 쓰려면 아래 3)을 마친 뒤 이렇게 등록해요.
 
 ```bash
 npx wrangler secret put TOSS_ACCESS_KEY
@@ -72,7 +72,7 @@ npx wrangler deploy
 
 배포가 끝나면 `https://threads-autopost.<계정>.workers.dev` 형태의 주소가 나와요.
 
-### 4) (선택) 토스 쉐어링크 자동 발급
+### 3) (선택) 토스 쉐어링크 자동 발급
 
 [토스 쉐어링크 Open API](https://sharelink-docs.toss.im/developers/open-api.md)를 쓰면 방장 링크를 붙여넣는 순간 **내 쉐어링크가 자동으로 발급**돼요.
 스레드 게시 자동화는 공식적으로 허용되는 용도예요. 단, 조건이 두 가지 있어요.
@@ -91,7 +91,7 @@ npx wrangler deploy
 방장 링크에서는 상품 그룹 번호만 알 수 있어서, 대표 옵션으로 링크가 발급돼요.
 발급되면 앱에 `✅ 내 링크 발급: 상품명 · 가격`이 떠요. 원문 옵션(예: 40병)과 맞는지 확인하세요.
 
-### 3) 폰에서 연결
+### 4) 폰에서 연결
 
 앱을 열고 오른쪽 위 ⚙︎을 눌러 **서버 주소**와 **앱 비밀번호**를 입력해요. **연결 확인**을 눌러 `✅ 쓰레드 @2_jinny_22`가 뜨면 끝이에요.
 안내 문구(토스/쿠팡)도 여기서 바꿀 수 있어요.
