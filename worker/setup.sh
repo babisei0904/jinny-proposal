@@ -5,7 +5,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 echo "▶ 패키지 설치"
-npm install --no-audit --no-fund >/dev/null
+npm install --no-audit --no-fund >/dev/null 2>&1 || npm install --no-audit --no-fund
+# 최신 npm은 설치 스크립트를 기본 차단한다 — 배포 도구(esbuild, workerd)에 필요한 것만 허용 후 다시 설치
+if npm help install-scripts >/dev/null 2>&1; then
+  npm install-scripts approve esbuild workerd >/dev/null 2>&1 || true
+fi
+npm rebuild esbuild workerd >/dev/null 2>&1 || true
 
 if npx wrangler whoami 2>&1 | grep -qi "not authenticated"; then
   echo "▶ Cloudflare 로그인 (브라우저가 열려요)"
@@ -25,7 +30,12 @@ if grep -q REPLACE_WITH_KV_NAMESPACE_ID wrangler.toml; then
 fi
 
 echo "▶ 배포"
-deploy_out="$(npx wrangler deploy 2>&1)"
+if ! deploy_out="$(npx wrangler deploy 2>&1)"; then
+  printf '%s\n' "$deploy_out"
+  echo
+  echo "❌ 배포에 실패했어요. 위 메시지를 그대로 복사해서 보내주세요." >&2
+  exit 1
+fi
 printf '%s\n' "$deploy_out" | tail -5
 URL="$(printf '%s' "$deploy_out" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -1 || true)"
 
