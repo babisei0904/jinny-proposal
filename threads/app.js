@@ -16,7 +16,7 @@ const DEFAULTS = {
   shortToss: "[광고] 토스쇼핑 쉐어링크 활동으로, 링크 구매 시 수수료를 지급받습니다.",
   shortCoupang: "[광고] 쿠팡 파트너스 활동으로, 링크 구매 시 수수료를 지급받습니다.",
   shortEtc: "[광고] 제휴 링크로, 링크 구매 시 수수료를 지급받습니다.",
-  bodyDisc: true,
+  bodyDisc: false, // 링크가 댓글에 있으므로 기본은 댓글 상단에만 표시
   autoOg: true,
 };
 
@@ -313,7 +313,6 @@ async function publish() {
   const replyText = $("reply").value.trim();
   const mine = $("myLink").value.trim();
   if (!$("body").value.trim()) return toast("본문을 써주세요");
-  if (!$("bodyDisc").checked && !confirm("본문에 대가성 문구가 없어요. 규정 위반으로 수익이 보류될 수 있어요. 그래도 올릴까요?")) return;
   if ([...text].length > 500 || [...replyText].length > 500) return toast("500자를 넘었어요");
   if (!hasServer()) {
     toast("설정에서 서버를 연결해주세요.\n지금은 ‘앱으로 열기’만 쓸 수 있어요.");
