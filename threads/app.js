@@ -8,10 +8,15 @@ const MAX_PHOTOS = 2;
 const DEFAULTS = {
   worker: "",
   key: "",
-  discToss: "이 게시물은 토스쇼핑 쉐어링크를 통해 일정액의 수수료를 받을 수 있어요.",
+  discToss: "이 콘텐츠는 토스쇼핑 쉐어링크 활동의 일환으로, 링크를 통한 구매가 발생하면 일정 수수료를 지급받습니다.",
   discCoupang: "이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
   discEtc: "이 게시물은 제휴 링크를 포함하며, 구매 시 일정액의 수수료를 받을 수 있어요.",
   linkPrefix: "👉 구매 링크",
+  // 본문에 붙는 짧은 대가성 문구 (규정상 댓글을 열지 않아도 보여야 함)
+  shortToss: "[광고] 토스쇼핑 쉐어링크 활동으로, 링크 구매 시 수수료를 지급받습니다.",
+  shortCoupang: "[광고] 쿠팡 파트너스 활동으로, 링크 구매 시 수수료를 지급받습니다.",
+  shortEtc: "[광고] 제휴 링크로, 링크 구매 시 수수료를 지급받습니다.",
+  bodyDisc: true,
   autoOg: true,
 };
 
@@ -22,7 +27,7 @@ const store = {
 };
 
 let settings = { ...DEFAULTS, ...store.get(SETTINGS_KEY, {}) };
-let status = { threads: false, ai: false, coupang: false };
+let status = { threads: false, ai: false, coupang: false, toss: false };
 const state = {
   parsed: null,
   store: "toss",
@@ -124,6 +129,7 @@ async function make() {
   if (bodyUntouched) selectHook(0, tpl[0]);
 
   if (settings.autoOg && state.photos.length === 0 && p.link && hasServer()) fetchOg(true);
+  if (p.link && canConvert(p.store)) convertLink(true);
 
   if (status.ai) {
     $("btnMake").disabled = true;
@@ -213,9 +219,12 @@ async function fetchOg(silent = false) {
 function setStore(s) {
   state.store = s;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.store === s));
-  $("btnConvert").hidden = !(s === "coupang" && status.coupang);
+  $("btnConvert").hidden = !canConvert(s);
+  $("btnConvert").textContent = s === "toss" ? "🔁 토스 내 쉐어링크로 변환" : "🔁 쿠팡 내 링크로 변환";
   const hints = {
-    toss: "‘원본 상품 열기’ → 토스 앱에서 공유 → 링크 복사 → 📋 를 누르세요.",
+    toss: status.toss
+      ? "토스 쉐어링크 API로 내 링크가 자동 발급돼요."
+      : "‘원본 상품 열기’ → 토스 앱에서 공유 → 링크 복사 → 📋 를 누르세요.",
     coupang: status.coupang
       ? "‘쿠팡 내 링크로 변환’을 누르면 내 파트너스 링크로 자동 교체돼요."
       : "쿠팡 파트너스에서 내 링크를 만들어 📋 로 붙여넣으세요.",
@@ -223,6 +232,7 @@ function setStore(s) {
   };
   $("linkHint").textContent = hints[s];
   composeReply();
+  updateCounts();
 }
 
 function updateOrigLink() {
@@ -253,36 +263,57 @@ function checkLink() {
   }
 }
 
-async function convertCoupang() {
+const canConvert = (s) => (s === "toss" && status.toss) || (s === "coupang" && status.coupang);
+
+// 방장 링크 → 내 쉐어링크/파트너스 링크 (서버의 토스·쿠팡 API 사용)
+async function convertLink(auto = false) {
   const link = state.parsed?.link || $("myLink").value.trim();
-  if (!link) return toast("변환할 쿠팡 링크가 없어요");
+  if (!link) return toast("변환할 링크가 없어요");
   $("btnConvert").disabled = true;
+  const btnText = $("btnConvert").textContent;
+  $("btnConvert").textContent = "🔁 내 링크 받는 중…";
   try {
-    const { url } = await api("/api/convert", { body: { url: link } });
+    const { url, option } = await api("/api/convert", { body: { url: link } });
     $("myLink").value = url;
     composeReply();
-    toast("내 파트너스 링크로 바꿨어요 ✅");
+    if (option?.name) {
+      // tacaId로 발급하면 대표 옵션으로 잡히므로 원문 옵션과 같은지 보여준다
+      $("linkHint").textContent = `✅ 내 링크 발급: ${option.name}${option.price ? ` · ${won(option.price)}` : ""}${option.soldOut ? " · ⚠️품절" : ""}`;
+    }
+    if (!auto) toast("내 링크로 바꿨어요 ✅");
   } catch (e) {
-    toast(e.message);
+    toast(`${auto ? "자동 링크 변환 실패 — 직접 붙여넣어 주세요\n" : ""}${e.message}`, 4000);
   } finally {
+    $("btnConvert").textContent = btnText;
     $("btnConvert").disabled = false;
   }
 }
 
 // ---------- 발행 ----------
+const shortDisc = () => ({ toss: settings.shortToss, coupang: settings.shortCoupang, etc: settings.shortEtc })[state.store];
+
+// 실제로 올라갈 본문 = 후킹 문구 + (선택) 짧은 대가성 문구
+function finalBody() {
+  const text = $("body").value.trim();
+  const disc = $("bodyDisc").checked ? shortDisc() : "";
+  return text && disc ? `${text}\n\n${disc}` : text;
+}
+
 function updateCounts() {
-  for (const [field, counter] of [["body", "bodyCount"], ["reply", "replyCount"]]) {
-    const n = [...$(field).value].length;
+  $("bodyDiscPreview").textContent = $("bodyDisc").checked ? shortDisc() : "";
+  const counts = { bodyCount: [...finalBody()].length, replyCount: [...$("reply").value].length };
+  for (const [counter, n] of Object.entries(counts)) {
     $(counter).textContent = n;
     $(counter).parentElement.classList.toggle("over", n > 500);
   }
 }
 
 async function publish() {
-  const text = $("body").value.trim();
+  const text = finalBody();
   const replyText = $("reply").value.trim();
   const mine = $("myLink").value.trim();
-  if (!text) return toast("본문을 써주세요");
+  if (!$("body").value.trim()) return toast("본문을 써주세요");
+  if (!$("bodyDisc").checked && !confirm("본문에 대가성 문구가 없어요. 규정 위반으로 수익이 보류될 수 있어요. 그래도 올릴까요?")) return;
   if ([...text].length > 500 || [...replyText].length > 500) return toast("500자를 넘었어요");
   if (!hasServer()) {
     toast("설정에서 서버를 연결해주세요.\n지금은 ‘앱으로 열기’만 쓸 수 있어요.");
@@ -320,7 +351,7 @@ async function publish() {
 
 // 서버 없이: 쓰레드 앱에 본문만 채워서 열고, 댓글은 클립보드로
 async function openIntent() {
-  const text = $("body").value.trim();
+  const text = finalBody();
   if (!text) return toast("본문을 써주세요");
   const copied = await copy($("reply").value.trim());
   window.open(`https://www.threads.net/intent/post?text=${encodeURIComponent(text)}`, "_blank");
@@ -363,7 +394,10 @@ function reset() {
 }
 
 // ---------- 설정 ----------
-const FIELDS = { sWorker: "worker", sKey: "key", sDiscToss: "discToss", sDiscCoupang: "discCoupang", sDiscEtc: "discEtc", sLinkPrefix: "linkPrefix" };
+const FIELDS = {
+  sWorker: "worker", sKey: "key", sDiscToss: "discToss", sDiscCoupang: "discCoupang", sDiscEtc: "discEtc",
+  sLinkPrefix: "linkPrefix", sShortToss: "shortToss", sShortCoupang: "shortCoupang", sShortEtc: "shortEtc",
+};
 
 function openSettings() {
   for (const [id, k] of Object.entries(FIELDS)) $(id).value = settings[k];
@@ -393,7 +427,7 @@ async function checkStatus() {
   } catch (e) {
     conn.className = "conn bad";
     conn.title = e.message;
-    status = { threads: false, ai: false, coupang: false };
+    status = { threads: false, ai: false, coupang: false, toss: false };
   }
   setStore(state.store);
   return status;
@@ -408,6 +442,11 @@ $("raw").addEventListener("paste", () => setTimeout(make, 0));
 $("btnMake").onclick = make;
 $("btnReset").onclick = reset;
 $("body").addEventListener("input", () => { state.selectedHook = -1; document.querySelectorAll(".hook").forEach((el) => el.classList.remove("sel")); updateCounts(); });
+$("bodyDisc").addEventListener("change", () => {
+  settings.bodyDisc = $("bodyDisc").checked;
+  store.set(SETTINGS_KEY, settings);
+  updateCounts();
+});
 $("reply").addEventListener("input", () => { state.replyDirty = true; updateCounts(); });
 $("myLink").addEventListener("input", () => composeReply());
 $("btnPasteLink").onclick = async () => {
@@ -417,7 +456,7 @@ $("btnPasteLink").onclick = async () => {
   else if (t) toast("클립보드에 링크가 없어요");
 };
 document.querySelectorAll(".tab").forEach((t) => (t.onclick = () => setStore(t.dataset.store)));
-$("btnConvert").onclick = convertCoupang;
+$("btnConvert").onclick = () => convertLink(false);
 $("filePick").onchange = async (e) => {
   for (const f of [...e.target.files]) await addPhoto(f, "upload").catch((err) => toast(err.message));
   e.target.value = "";
@@ -435,7 +474,7 @@ $("btnTest").onclick = async () => {
   settings = prev;
   r.textContent = !s
     ? `❌ 연결 실패: ${$("conn").title}`
-    : `${s.threads ? `✅ 쓰레드 @${s.threadsUser}` : "❌ 쓰레드 토큰 없음/만료"} · ${s.ai ? "✅ AI 문구" : "— AI 미설정"} · ${s.coupang ? "✅ 쿠팡 변환" : "— 쿠팡 미설정"}`;
+    : `${s.threads ? `✅ 쓰레드 @${s.threadsUser}` : "❌ 쓰레드 토큰 없음/만료"} · ${s.ai ? "✅ AI 문구" : "— AI 미설정"} · ${s.toss ? "✅ 토스 변환" : "— 토스 미설정"} · ${s.coupang ? "✅ 쿠팡 변환" : "— 쿠팡 미설정"}`;
 };
 $("settings").addEventListener("close", () => {
   if ($("settings").returnValue !== "save") return;
@@ -448,6 +487,7 @@ $("settings").addEventListener("close", () => {
 
 // ---------- 시작 ----------
 async function init() {
+  $("bodyDisc").checked = settings.bodyDisc;
   updateOrigLink();
   composeReply(true);
   renderHistory();

@@ -53,7 +53,7 @@ export default {
         case "POST /api/og":
           return json(await ogImage(env, (await req.json()).url, url));
         case "POST /api/convert":
-          return json(await convertCoupang(env, (await req.json()).url));
+          return json(await convertLink(env, (await req.json()).url));
         case "POST /api/publish":
           return json(await publish(env, await req.json()));
         case "POST /api/refresh-token":
@@ -87,6 +87,7 @@ async function status(env) {
     threadsUser,
     ai: Boolean(env.ANTHROPIC_API_KEY),
     coupang: Boolean(env.COUPANG_ACCESS_KEY && env.COUPANG_SECRET_KEY),
+    toss: Boolean(env.TOSS_ACCESS_KEY && env.TOSS_SECRET_KEY && env.TOSS_PUBLISHER_ID),
   };
 }
 
@@ -200,6 +201,112 @@ async function ogImage(env, link, url) {
 
 const decodeEntities = (s) =>
   s.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+
+// ---------- 내 링크로 변환 ----------
+
+async function convertLink(env, link) {
+  if (/toss\.(shopping|im)/i.test(link || "")) return convertToss(env, link);
+  if (/coupang\.com|coupa\.ng/i.test(link || "")) return convertCoupang(env, link);
+  throw new HttpError(400, "토스쇼핑/쿠팡 링크만 변환할 수 있어요");
+}
+
+// ---------- 토스쇼핑 쉐어링크 Open API ----------
+// 문서: https://sharelink-docs.toss.im/developers/open-api.md
+// 토스는 등록된 고정 출발지 IP에서만 호출을 허용한다. Cloudflare Worker는 출발지 IP가 고정되지 않으므로
+// TOSS_PROXY_URL(고정 IP 서버에서 돌리는 toss-proxy)을 거쳐 호출한다.
+
+function tossUrl(env, path) {
+  if (env.TOSS_PROXY_URL) return env.TOSS_PROXY_URL.replace(/\/$/, "") + path;
+  return path === "/token" ? "https://oauth2.cert.toss.im/token" : `https://sharelink.toss.im${path}`;
+}
+
+function tossFetch(env, path, init = {}) {
+  const headers = { ...(init.headers || {}) };
+  if (env.TOSS_PROXY_URL) headers["X-Proxy-Key"] = env.TOSS_PROXY_KEY || "";
+  return fetch(tossUrl(env, path), { ...init, headers });
+}
+
+// 토큰은 유효기간(약 1년) 동안 재사용해야 한다 — 매번 발급하면 이용이 제한될 수 있음
+async function getTossToken(env) {
+  const cached = await env.IMAGES.get("__toss_token", { type: "json" });
+  if (cached && cached.exp > Date.now() + 86400_000) return cached.token;
+  const r = await tossFetch(env, "/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: env.TOSS_ACCESS_KEY,
+      client_secret: env.TOSS_SECRET_KEY,
+      scope: "sharelink:read sharelink:write",
+    }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!d.access_token) throw new HttpError(502, `토스 토큰 발급 실패 (${r.status})`);
+  await env.IMAGES.put("__toss_token", JSON.stringify({ token: d.access_token, exp: Date.now() + d.expires_in * 1000 }));
+  return d.access_token;
+}
+
+async function tossApi(env, path, init = {}) {
+  const token = await getTossToken(env);
+  const r = await tossFetch(env, path, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, ...(init.body ? { "Content-Type": "application/json" } : {}) },
+  });
+  const d = await r.json().catch(() => ({}));
+  if (d.resultType !== "SUCCESS") {
+    const code = d.error?.errorCode;
+    const msg =
+      code === "SHARELINK_OPENAPI_ACCESS_DENIED"
+        ? "토스가 접근을 거부했어요 (출발지 IP 등록 또는 키 확인)"
+        : code === "SHARELINK_OPENAPI_QUOTA_EXCEEDED"
+          ? "오늘 토스 API 한도를 다 썼어요"
+          : d.error?.reason || `HTTP ${r.status}`;
+    throw new HttpError(502, `토스 링크 발급 실패: ${msg}`);
+  }
+  return d.success;
+}
+
+// 방장 링크(toss.shopping/_m/xxx) → 상품 페이지(toss.shopping/t/{tacaId}) 로 풀어서 상품 그룹 ID를 얻는다
+async function resolveTacaId(link) {
+  let current = link;
+  for (let i = 0; i < 5; i++) {
+    const m = current.match(/toss\.shopping\/t\/(\d+)/);
+    if (m) return Number(m[1]);
+    const r = await fetch(current, { redirect: "manual", headers: { "User-Agent": UA } });
+    const loc = r.headers.get("Location");
+    if (!loc) break;
+    current = new URL(loc, current).href;
+  }
+  throw new HttpError(400, "토스 상품 번호를 찾지 못했어요");
+}
+
+async function convertToss(env, link) {
+  if (!env.TOSS_ACCESS_KEY || !env.TOSS_SECRET_KEY || !env.TOSS_PUBLISHER_ID) {
+    throw new HttpError(400, "토스 쉐어링크 API 키가 설정되지 않았어요");
+  }
+  const tacaId = await resolveTacaId(link);
+  // 같은 상품은 저장해 둔 링크를 재사용 (문서 권장, 일 발급 한도 절약)
+  const cacheKey = `__toss_link_${tacaId}`;
+  const cached = await env.IMAGES.get(cacheKey, { type: "json" });
+  if (cached) return cached;
+
+  const issued = await tossApi(env, "/openapi/links", {
+    method: "POST",
+    body: JSON.stringify({ landingType: "PRODUCT", tacaId, publisherId: env.TOSS_PUBLISHER_ID }),
+  });
+
+  // 링크가 어떤 옵션으로 발급됐는지 확인용 (원문의 옵션과 다를 수 있음)
+  let option = null;
+  try {
+    const detail = await tossApi(env, `/openapi/products/detail?tacaItemIds=${issued.tacaItemId}`);
+    const item = detail.items?.[0];
+    if (item) option = { name: item.displayName, price: item.displayPrice, soldOut: item.isSoldOut };
+  } catch {}
+
+  const result = { url: issued.shortUrl, option };
+  await env.IMAGES.put(cacheKey, JSON.stringify(result), { expirationTtl: 30 * 86400 });
+  return result;
+}
 
 // ---------- 쿠팡 파트너스 링크 변환 ----------
 

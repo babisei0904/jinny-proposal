@@ -40,6 +40,8 @@
     <h2><span class="step">2</span>본문 (후킹 문구)</h2>
     <div id="hooks" class="hooks"></div>
     <textarea id="body" rows="4" placeholder="본문 — 후보를 누르거나 직접 쓰세요"></textarea>
+    <label class="check"><input id="bodyDisc" type="checkbox" checked> 본문 끝에 대가성 문구 넣기 <small class="muted">(토스·쿠팡 규정: 댓글만으론 안 돼요)</small></label>
+    <p id="bodyDiscPreview" class="hint"></p>
     <div class="count"><span id="bodyCount">0</span>/500</div>
   </section>
 
@@ -101,13 +103,22 @@
     <button type="button" id="btnTest" class="chip">연결 확인</button>
     <p id="testResult" class="hint"></p>
 
-    <label class="lbl">토스쇼핑 안내 문구
+    <label class="lbl">본문용 짧은 문구 — 토스
+      <input id="sShortToss" type="text">
+    </label>
+    <label class="lbl">본문용 짧은 문구 — 쿠팡
+      <input id="sShortCoupang" type="text">
+    </label>
+    <label class="lbl">본문용 짧은 문구 — 기타
+      <input id="sShortEtc" type="text">
+    </label>
+    <label class="lbl">토스쇼핑 안내 문구 (댓글)
       <textarea id="sDiscToss" rows="2"></textarea>
     </label>
-    <label class="lbl">쿠팡 안내 문구
+    <label class="lbl">쿠팡 안내 문구 (댓글)
       <textarea id="sDiscCoupang" rows="2"></textarea>
     </label>
-    <label class="lbl">기타 안내 문구
+    <label class="lbl">기타 안내 문구 (댓글)
       <textarea id="sDiscEtc" rows="2"></textarea>
     </label>
     <label class="lbl">링크 앞 문구

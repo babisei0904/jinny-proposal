@@ -151,3 +151,4 @@ dialog { border: 0; border-radius: 16px; padding: 0; width: min(520px, calc(100%
 dialog::backdrop { background: rgba(0,0,0,.4); }
 .settings { padding: 16px; max-height: 85vh; overflow: auto; }
 .check { display: flex; gap: 8px; align-items: center; font-size: 14px; margin-top: 12px; }
+.muted { color: var(--muted); font-size: 12px; }
