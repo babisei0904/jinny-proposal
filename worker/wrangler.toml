@@ -11,7 +11,7 @@ id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
 # 매주 월요일 새벽에 쓰레드 장기 토큰 자동 갱신 (60일 만료 방지)
 [triggers]
-crons = ["17 18 * * 0"]
+crons = ["17 18 * * SUN"]
 
 # 비밀값은 여기 적지 말고 `npx wrangler secret put 이름` 으로 등록하세요:
 #   APP_PASSWORD          폰 앱에서 입력할 비밀번호 (아무 긴 문자열)
