@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 # `npx wrangler kv namespace create IMAGES` 실행 후 나온 id로 바꿔주세요
 [[kv_namespaces]]
 binding = "IMAGES"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "f7d32421329e48788206418b590b0c47"
 
 # 매주 월요일 새벽에 쓰레드 장기 토큰 자동 갱신 (60일 만료 방지)
 [triggers]
