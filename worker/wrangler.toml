@@ -1,0 +1,27 @@
+name = "threads-autopost"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 사진 임시 보관 + 갱신된 쓰레드 토큰 저장용 KV
+# `npx wrangler kv namespace create IMAGES` 실행 후 나온 id로 바꿔주세요
+[[kv_namespaces]]
+binding = "IMAGES"
+id = "f7d32421329e48788206418b590b0c47"
+
+# 매주 월요일 새벽에 쓰레드 장기 토큰 자동 갱신 (60일 만료 방지)
+[triggers]
+crons = ["17 18 * * SUN"]
+
+# 비밀값은 여기 적지 말고 `npx wrangler secret put 이름` 으로 등록하세요:
+#   APP_PASSWORD          폰 앱에서 입력할 비밀번호 (아무 긴 문자열)
+#   THREADS_ACCESS_TOKEN  쓰레드 장기 액세스 토큰
+#   THREADS_USER_ID       (선택) 쓰레드 사용자 ID — 없으면 자동 조회
+#   ANTHROPIC_API_KEY     (선택) 후킹 문구 AI 생성용
+#   COUPANG_ACCESS_KEY    (선택) 쿠팡 파트너스 링크 자동 변환용
+#   COUPANG_SECRET_KEY    (선택)
+#   TOSS_ACCESS_KEY       (선택) 토스 쉐어링크 Open API — 사업자 승인 필요
+#   TOSS_SECRET_KEY       (선택)
+#   TOSS_PUBLISHER_ID     (선택) 어드민의 "회원 연동 ID"
+#   TOSS_PROXY_URL        (선택) 고정 IP 중계 서버 주소 (toss-proxy/)
+#   TOSS_PROXY_KEY        (선택) 중계 서버 PROXY_KEY와 같은 값
