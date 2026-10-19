@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import media, projects, store, tts
+from . import media, projects, store, thumbs, tts
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("PORT", "8421"))
@@ -502,6 +502,50 @@ async def project_render(pid: str, manifest: str = Form(...), files: list[Upload
     return _start("render", work)
 
 
+# ---------------------------------------------------------------- 썸네일 제작
+
+@app.get("/api/thumb/sources")
+def thumb_sources():
+    return thumbs.sources()
+
+
+@app.post("/api/thumb/frame")
+def thumb_frame(data: dict):
+    try:
+        return thumbs.frame(str(data.get("src", "")), float(data.get("t", 0)))
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/thumb/save")
+async def thumb_save(meta: str = Form(...), image: UploadFile = File(...)):
+    try:
+        m = json.loads(meta)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "저장 정보가 올바르지 않습니다.")
+    png = thumbs.new_png_path(m.get("name", ""))
+    with png.open("wb") as out:
+        shutil.copyfileobj(image.file, out)
+    result = {"png": f"/files/thumbs/{png.name}", "png_file": png.name}
+    src = str(m.get("src", ""))
+    if not m.get("insert") or not src:
+        job = _start("thumb", lambda job, progress: job.update(result=result))
+        return job
+
+    def work(job, progress):
+        progress(0.1, "썸네일을 영상에 넣는 중")
+        out = png.with_suffix(".mp4")
+        try:
+            dur = thumbs.with_cover(src, png, m.get("position", "start"), float(m.get("seconds", 0.1)), out)
+        except (ValueError, FileNotFoundError) as e:
+            raise RuntimeError(str(e))
+        result.update(mp4=f"/files/thumbs/{out.name}", mp4_file=out.name, duration=round(dur, 2),
+                      size_mb=round(out.stat().st_size / 1_048_576, 1))
+        job["result"] = result
+
+    return _start("thumb", work)
+
+
 # ---------------------------------------------------------------- Mac 연동
 
 class OpenApp(BaseModel):
@@ -532,7 +576,9 @@ def reveal(req: Reveal):
     if "/" in req.file or "\\" in req.file:
         raise HTTPException(400, "잘못된 파일입니다.")
     root = store.OUTPUTS
-    if req.project:
+    if req.project == "thumbs":
+        root = thumbs.THUMBS
+    elif req.project:
         root = projects.pdir(req.project) / "renders"
     target = root / req.file if req.file else root
     if not target.exists():
@@ -556,6 +602,7 @@ app.mount("/files/outputs", StaticFiles(directory=store.OUTPUTS), name="outputs"
 (store.DATA / "tts_preview").mkdir(exist_ok=True)
 app.mount("/files/tts_preview", StaticFiles(directory=store.DATA / "tts_preview"), name="tts_preview")
 app.mount("/files/projects", StaticFiles(directory=projects.PROJECTS), name="projects")
+app.mount("/files/thumbs", StaticFiles(directory=thumbs.THUMBS), name="thumbs")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 

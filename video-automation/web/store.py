@@ -24,7 +24,6 @@ DEFAULT_SETTINGS = {
         "shorttube_shopping": "https://short.agczero.com/make/shorts-maker/shorts-adaptation",
         "shorttube_subtitle": "https://short.agczero.com/",
         "shorttube_cut": "https://short.agczero.com/",
-        "shorttube_thumbnail": "https://short.agczero.com/",
         "compress": "https://www.freeconvert.com/ko/video-compressor",
         "chatgpt": "https://chatgpt.com/",
         "gemini": "https://gemini.google.com/app",

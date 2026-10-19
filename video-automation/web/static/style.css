@@ -302,3 +302,53 @@ input[type=color]{width:100%;height:36px;border:1px solid var(--line);border-rad
   .mk-card{padding:16px}
   .clip-row .n{max-width:180px}
 }
+
+/* ===================== 썸네일 제작 ===================== */
+.th-head{border-bottom:1px solid var(--line);padding-bottom:12px}
+.th-steps{gap:6px}
+.th-steps span{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--faint);padding:5px 10px;border-radius:99px;border:1px solid var(--line)}
+.th-steps span i{font-style:normal;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:var(--line);color:#fff;font-size:11px}
+.th-steps span.done{color:#a21caf;border-color:#f0c6f5}.th-steps span.done i{background:#a21caf}
+.th-steps span.on{background:#a21caf;color:#fff;border-color:#a21caf}.th-steps span.on i{background:#fff;color:#a21caf}
+.th-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:18px;align-items:start}
+.th-dark{background:#0b0d1f;border-radius:20px;padding:18px;gap:12px}
+.th-vwrap{position:relative;width:100%;display:flex;justify-content:center}
+.th-video{max-width:100%;max-height:560px;border-radius:12px;background:#000;display:block}
+.th-cropbox{position:absolute;border:2px solid #e879f9;box-shadow:0 0 0 9999px rgba(0,0,0,.55);pointer-events:none;border-radius:6px;display:none}
+.th-vwrap{overflow:hidden}
+.th-ctrl{justify-content:center;flex-wrap:wrap;gap:6px}
+.th-ctrl button{border:1px solid #2c3050;background:#161a33;color:#cdd1e6;border-radius:8px;padding:6px 10px;font-size:12.5px;cursor:pointer;font-family:ui-monospace,monospace}
+.th-ctrl button.play{background:#a21caf;border-color:#a21caf;color:#fff;font-family:inherit;font-weight:700;padding:6px 16px}
+.th-ctrl button.play.orange{background:#ea580c;border-color:#ea580c}
+.ratio-btn{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:10px;text-align:left;display:flex;flex-direction:column;gap:2px;cursor:pointer;color:var(--text)}
+.ratio-btn span{font-size:11.5px;color:var(--faint)}
+.ratio-btn.on{border:2px solid #d946ef;background:#fdf4ff}
+.th-cta{background:#a21caf;border-color:#a21caf;color:#fff}
+.th-cta:hover{filter:brightness(1.08);border-color:#a21caf}
+.th-next{background:#4f46e5;border-color:#4f46e5;color:#fff}
+.th-snap{background:#0b0d1f;border-radius:12px;padding:10px;display:flex;justify-content:center}
+.th-snap img{max-height:180px;border-radius:6px}
+.th-canvas{border-radius:10px;background:#000;touch-action:none;cursor:default;max-width:100%}
+.th-canvas.mode-pen{cursor:crosshair}.th-canvas.mode-eraser{cursor:cell}
+.pill{border:0;border-radius:99px;padding:5px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
+.pill.purple{background:#a21caf;color:#fff}.pill.red{background:#e11d48;color:#fff}.pill.ghost{background:#1c2040;color:#b8bcd6}
+.badge-chip{border:0;border-radius:99px;color:#fff;font-weight:800;font-size:12.5px;padding:5px 11px;cursor:pointer}
+.badge-chip:hover{filter:brightness(1.1)}
+.th-bgctl{color:#aab;font-size:12px;gap:6px;width:100%;justify-content:center;flex-wrap:wrap}
+.th-bgctl input{width:120px}
+.seg2{display:flex;gap:8px;flex-wrap:wrap}
+.seg2 button{flex:1;min-width:120px;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:9px;font-weight:600;font-size:13px;cursor:pointer;color:var(--sub)}
+.seg2 button.on{border:2px solid #d946ef;background:#fdf4ff;color:#a21caf}
+.swatch{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);cursor:pointer}
+.btn.red{background:#e11d48;border-color:#e11d48;color:#fff}
+.th-result{max-height:460px;max-width:100%;border-radius:14px;background:#000;box-shadow:var(--shadow)}
+.ok-ico{width:40px;height:40px;border-radius:50%;background:var(--ok-soft);color:var(--ok);display:inline-grid;place-items:center;font-weight:800;font-size:20px}
+.ok-ico.sm{width:30px;height:30px;font-size:15px}
+.done-row{background:#eef2ff;border-radius:12px;padding:12px}
+.th-mp4v{max-height:420px;border-radius:12px;background:#000;align-self:center}
+.th-src .media img{object-fit:cover}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .ratio-btn.on,:root:not([data-theme="light"]) .seg2 button.on{background:#3b1340}
+  :root:not([data-theme="light"]) .done-row{background:#1f2140}
+}
+@media (max-width:1100px){.th-grid{grid-template-columns:minmax(0,1fr)}}

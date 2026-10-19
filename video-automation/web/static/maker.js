@@ -1200,7 +1200,8 @@ function step5(body) {
       <div class="stack">
         <div id="rJob"></div>
         <button class="btn primary big" id="doRender">${r ? "↻ 다시 만들기 (수정 반영)" : "🎬 최종 영상 만들기"}</button>
-        ${r ? `<div class="row"><a class="btn" href="${r.url}" download="${esc(r.file)}">⬇ MP4 다운로드</a><button class="btn" id="reveal">Finder에서 보기</button></div>` : ""}
+        ${r ? `<div class="row"><a class="btn" href="${r.url}" download="${esc(r.file)}">⬇ MP4 다운로드</a><button class="btn" id="reveal">Finder에서 보기</button>
+          <a class="btn primary" href="#/thumb?src=${encodeURIComponent(`proj:${p.id}:${r.file}`)}&url=${encodeURIComponent(r.url)}&name=${encodeURIComponent(p.name)}">🖼 이 영상으로 썸네일 만들기</a></div>` : ""}
         <div class="card tight stack">
           <b>📝 업로드용 정보</b>
           <label class="f">제목<div class="row" style="flex-wrap:nowrap"><input type="text" id="ftitle" value="${esc(p.title)}" placeholder="제목"><button class="btn sm" id="cpTitle">복사</button></div></label>

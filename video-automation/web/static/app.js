@@ -8,7 +8,6 @@ const LINK_LABELS = {
   shorttube_shopping: "숏튜브 쇼핑숏츠 만들기",
   shorttube_subtitle: "숏튜브 자막 제거",
   shorttube_cut: "숏튜브 영상 자르기",
-  shorttube_thumbnail: "숏튜브 썸네일 제작",
   compress: "용량 줄이기 (FreeConvert)",
   chatgpt: "ChatGPT",
   gemini: "Gemini",
@@ -254,7 +253,7 @@ async function viewDashboard(v) {
     ["클립 합치기", "여러 영상을 1~3개로 이어 붙이기", "내 컴퓨터", "go:merge"],
     ["자막 제거", "중국어 자막 지우기", "숏튜브", "link:shorttube_subtitle"],
     ["영상 자르기", "구간 자르기 · 9:16 크롭", "숏튜브", "link:shorttube_cut"],
-    ["썸네일 제작", "장면 캡처 + 문구", "숏튜브", "link:shorttube_thumbnail"],
+    ["썸네일 제작", "장면 캡처 + 문구·배지 꾸미기", "내 컴퓨터", "go:thumb"],
     ["용량 줄이기", "업로드용으로 가볍게", "FreeConvert", "link:compress"],
   ];
   const ai = [
@@ -610,9 +609,10 @@ async function route() {
   window.scrollTo(0, 0);
   try { window.__leave?.(); } catch {}
   window.__leave = null;
-  document.body.classList.toggle("wide-main", name === "make");
+  document.body.classList.toggle("wide-main", name === "make" || name === "thumb");
   try {
     if (name === "make") await viewMaker(v, query);
+    else if (name === "thumb") await viewThumb(v, query);
     else if (name === "photo") viewPhoto(v);
     else if (name === "merge") viewMerge(v, query);
     else if (name === "prompts") viewPrompts(v);
