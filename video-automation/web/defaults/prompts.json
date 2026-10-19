@@ -1,0 +1,58 @@
+[
+  {
+    "title": "여행 숏핑숏츠 대본 (3가지 버전)",
+    "category": "대본",
+    "target": "chatgpt",
+    "pinned": true,
+    "body": "너는 조회수 상위 0.1% 여행 숏츠 작가야.\n아래 숙소로 25~30초 분량의 세로 숏츠 대본을 3가지 버전으로 써줘.\n\n- 숙소: {숙소명}\n- 지역: {지역}\n- 사진 순서와 장면: {사진 설명}\n- 꼭 넣을 정보: {핵심 정보}\n\n[버전]\n1. 안티/반전형: 첫 문장에서 \"비행기 표 당장 취소하세요\"처럼 상식을 뒤집는다\n2. 감각/공간 몰입형: 소리·빛·온도 같은 감각 묘사로 그 공간에 있는 느낌을 준다\n3. 정보/가성비형: 가격·위치·꿀팁을 빠르게 정리한다\n\n[규칙]\n- 한 문장은 25자 이내, 5~7문장\n- 사진 순서대로 장면이 바뀌게 문장을 배치\n- 마지막 문장은 저장/댓글 유도 (예: \"올여름 방 다 차기 전에 저장부터 해두세요\")\n- 이모지, 해시태그 없이 대본 문장만"
+  },
+  {
+    "title": "쇼핑숏츠 대본 각색",
+    "category": "대본",
+    "target": "chatgpt",
+    "pinned": true,
+    "body": "너는 쇼핑 숏츠 전문 카피라이터야.\n아래 상품으로 15~20초 쇼핑 숏츠 대본을 2가지 버전으로 써줘.\n\n- 상품명: {상품명}\n- 핵심 특징: {핵심 특징}\n- 영상에 나오는 장면: {장면 설명}\n\n[규칙]\n- 첫 문장은 3초 안에 \"이거 뭐지?\" 궁금하게 만드는 후킹\n- 설명보다 사용 장면을 말로 보여주기\n- 한 문장 20자 이내, 5~6문장\n- 마지막은 \"자세한 정보는 프로필 링크에서 확인하세요\"로 끝내기\n- 중국어 원문 번역투 금지, 자연스러운 한국어 구어체"
+  },
+  {
+    "title": "제목·설명·해시태그",
+    "category": "제목·설명",
+    "target": "chatgpt",
+    "pinned": false,
+    "body": "아래 숏츠 대본으로 업로드용 문구를 만들어줘.\n\n[대본]\n{대본}\n\n1. 제목 5개 (30자 이내, 숫자나 질문형 포함)\n2. 썸네일 문구 5개 (두 줄, 한 줄 8자 이내)\n3. 유튜브 설명 3줄\n4. 해시태그 8개"
+  },
+  {
+    "title": "사진 → 영상 기본 (구글 플로우)",
+    "category": "사진→영상",
+    "target": "flow",
+    "pinned": true,
+    "body": "Animate this exact photo into a realistic vertical 9:16 video. Scene: {장면}. Camera: {카메라 움직임}. Keep every object, color and layout identical to the photo. Natural light, gentle ambient motion (water ripples, leaves, curtains). No text, no logos, no new people, no distortion. Cinematic, high detail, 8 seconds."
+  },
+  {
+    "title": "사진 → 영상 직접 찍은 듯한 핸드헬드 (구글 플로우)",
+    "category": "사진→영상",
+    "target": "flow",
+    "pinned": false,
+    "body": "Turn this photo into a vertical 9:16 smartphone video that looks like a traveler filming on site. Scene: {장면}. Camera: {카메라 움직임}, slight natural handheld shake, walking pace. Keep the place exactly as in the photo. Realistic daylight, subtle ambient sound of the place. No text, no faces close-up, no distortion."
+  },
+  {
+    "title": "목소리용 대본 다듬기 (TTS)",
+    "category": "목소리·자막",
+    "target": "chatgpt",
+    "pinned": false,
+    "body": "아래 대본을 AI 목소리(TTS)가 자연스럽게 읽도록 다듬어줘.\n- 숫자, 영어, 단위는 읽는 그대로 한글로 (예: 3만9천원, 에어비앤비)\n- 쉼표로 숨 쉴 곳 표시\n- 뜻은 바꾸지 말 것\n\n[대본]\n{대본}"
+  },
+  {
+    "title": "자막 줄 나누기 (브루용)",
+    "category": "목소리·자막",
+    "target": "chatgpt",
+    "pinned": false,
+    "body": "아래 대본을 숏츠 자막용으로 줄을 나눠줘.\n- 한 줄 7~12자, 말 호흡이 끊기는 곳에서 자르기\n- 문장부호는 빼기\n- 한 줄에 한 자막, 번호 없이\n\n[대본]\n{대본}"
+  },
+  {
+    "title": "일상 영상 장면 분석 (3번용)",
+    "category": "장면 분석",
+    "target": "chatgpt",
+    "pinned": false,
+    "body": "첨부한 이미지들은 내 일상 영상 클립들의 장면 캡처야. 파일 이름이 클립 이름이야.\n아래 대본의 문장마다 가장 어울리는 클립을 골라줘.\n한 문장에 0.5~2초짜리 컷이 1~3개 들어가게 해줘.\n\n[대본]\n{대본}\n\n결과는 표로: 문장 | 클립 이름 | 사용할 부분(예: 0:03~0:05) | 고른 이유"
+  }
+]

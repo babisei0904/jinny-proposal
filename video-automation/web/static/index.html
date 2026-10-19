@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>영상 작업실</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <a class="brand" href="#/"><span class="logo">작</span><span>영상 작업실</span></a>
+    <nav id="nav">
+      <a href="#/" data-route="">대시보드</a>
+      <a href="#/photo" data-route="photo">사진 → 영상</a>
+      <a href="#/merge" data-route="merge">클립 합치기</a>
+      <a href="#/prompts" data-route="prompts">프롬프트 보관함</a>
+      <a href="#/settings" data-route="settings">설정</a>
+    </nav>
+    <div class="side-foot">
+      <button class="link-btn" data-open="shorttube">숏튜브 열기 ↗</button>
+    </div>
+  </aside>
+  <main id="view" class="main"></main>
+</div>
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

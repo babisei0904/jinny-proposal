@@ -1,0 +1,349 @@
+"""영상 작업실 로컬 서버.  실행:  python -m web.server   →  http://127.0.0.1:8421"""
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import traceback
+import uuid
+import webbrowser
+from pathlib import Path
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from . import media, store
+
+HOST = "127.0.0.1"
+PORT = int(os.environ.get("PORT", "8421"))
+STATIC = Path(__file__).resolve().parent / "static"
+IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".bmp", ".tif", ".tiff"}
+VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+ID_RE = re.compile(r"^[0-9a-f]{32}\.(jpg|mp4|mov|m4v|webm|mkv|avi)$")
+
+app = FastAPI(title="영상 작업실")
+
+
+# ---------------------------------------------------------------- 공통
+
+def _upload_path(fid: str) -> Path:
+    if not ID_RE.match(fid or ""):
+        raise HTTPException(400, "잘못된 파일입니다.")
+    p = store.UPLOADS / fid
+    if not p.exists():
+        raise HTTPException(404, "업로드한 파일을 찾을 수 없습니다. 다시 올려 주세요.")
+    return p
+
+
+def _span(word: str, idx: list[int]) -> str:
+    return f"{word} {idx[0] + 1}" if len(idx) == 1 else f"{word} {idx[0] + 1}~{idx[-1] + 1}"
+
+
+def _safe_name(name: str) -> str:
+    name = re.sub(r"[\\/:*?\"<>|\s]+", "_", name).strip("._")
+    return name[:40] or "영상"
+
+
+@app.exception_handler(Exception)
+async def _err(_, exc: Exception):
+    return JSONResponse({"detail": str(exc)}, status_code=500)
+
+
+# ---------------------------------------------------------------- 설정 / 프롬프트
+
+@app.get("/api/settings")
+def get_settings():
+    return store.get_settings()
+
+
+@app.put("/api/settings")
+def put_settings(data: dict):
+    return store.save_settings(data)
+
+
+@app.get("/api/prompts")
+def prompts():
+    return store.list_prompts()
+
+
+@app.post("/api/prompts")
+def prompt_add(data: dict):
+    return store.add_prompt(data)
+
+
+@app.put("/api/prompts/{pid}")
+def prompt_update(pid: str, data: dict):
+    item = store.update_prompt(pid, data)
+    if not item:
+        raise HTTPException(404, "프롬프트를 찾을 수 없습니다.")
+    return item
+
+
+@app.delete("/api/prompts/{pid}")
+def prompt_delete(pid: str):
+    if not store.delete_prompt(pid):
+        raise HTTPException(404, "프롬프트를 찾을 수 없습니다.")
+    return {"ok": True}
+
+
+@app.post("/api/prompts/import")
+def prompt_import(data: dict):
+    n = store.import_prompts(data.get("items"), bool(data.get("replace")))
+    return {"added": n}
+
+
+# ---------------------------------------------------------------- 업로드
+
+@app.post("/api/upload")
+async def upload(files: list[UploadFile] = File(...)):
+    result = []
+    for f in files:
+        ext = Path(f.filename or "").suffix.lower()
+        if ext not in IMAGE_EXT | VIDEO_EXT:
+            raise HTTPException(400, f"지원하지 않는 파일입니다: {f.filename}")
+        fid = uuid.uuid4().hex
+        raw = store.UPLOADS / f"{fid}.raw{ext}"
+        with raw.open("wb") as out:
+            shutil.copyfileobj(f.file, out)
+        item = {"name": f.filename}
+        if ext in IMAGE_EXT:
+            dst = store.UPLOADS / f"{fid}.jpg"
+            try:
+                media.normalize_photo(raw, dst)
+            finally:
+                raw.unlink(missing_ok=True)
+            item.update(id=dst.name, kind="image", url=f"/files/uploads/{dst.name}")
+        else:
+            dst = store.UPLOADS / f"{fid}{ext}"
+            raw.rename(dst)
+            info = media.probe(dst)
+            thumb = store.UPLOADS / f"{fid}_poster.jpg"
+            media.poster(dst, thumb)
+            item.update(id=dst.name, kind="video", url=f"/files/uploads/{dst.name}",
+                        poster=f"/files/uploads/{thumb.name}" if thumb.exists() else None,
+                        duration=round(info["duration"], 2), width=info["width"], height=info["height"])
+        result.append(item)
+    return result
+
+
+# ---------------------------------------------------------------- 작업 (백그라운드)
+
+JOBS: dict[str, dict] = {}
+
+
+def _start(kind: str, fn) -> dict:
+    jid = uuid.uuid4().hex[:12]
+    job = {"id": jid, "kind": kind, "status": "running", "progress": 0.0,
+           "message": "준비 중", "outputs": [], "error": None, "started": time.time()}
+    JOBS[jid] = job
+
+    def progress(p: float, msg: str):
+        job["progress"], job["message"] = round(p, 3), msg
+
+    def run():
+        try:
+            fn(job, progress)
+            job.update(status="done", progress=1.0, message="완료")
+        except Exception as e:  # noqa: BLE001
+            traceback.print_exc()
+            job.update(status="error", error=str(e), message="실패")
+
+    threading.Thread(target=run, daemon=True).start()
+    return job
+
+
+def _output(job: dict, path: Path, label: str) -> None:
+    info = media.probe(path)
+    thumb = path.with_suffix(".jpg")
+    media.poster(path, thumb)
+    job["outputs"].append({
+        "file": path.name, "label": label, "url": f"/files/outputs/{path.name}",
+        "poster": f"/files/outputs/{thumb.name}" if thumb.exists() else None,
+        "duration": round(info["duration"], 2),
+        "size_mb": round(path.stat().st_size / 1_048_576, 1),
+    })
+
+
+class PhotoItem(BaseModel):
+    id: str
+    motion: str = "auto"
+
+
+class PhotoJob(BaseModel):
+    name: str = "사진영상"
+    photos: list[PhotoItem]
+    ratio: str = "9:16"
+    fit: str = "cover"
+    seconds: float = 3.0
+    output: str = "one"          # each | one | three
+    transition: bool = True
+
+
+@app.post("/api/jobs/photo-video")
+def job_photo_video(req: PhotoJob):
+    if not req.photos:
+        raise HTTPException(400, "사진을 올려 주세요.")
+    if req.ratio not in media.RATIOS:
+        raise HTTPException(400, "화면 비율을 다시 골라 주세요.")
+    paths = [_upload_path(p.id) for p in req.photos]
+    seconds = max(1.0, min(15.0, req.seconds))
+    stamp = time.strftime("%m%d_%H%M%S")
+    base = _safe_name(req.name)
+
+    def work(job, progress):
+        clips = []
+        n = len(paths)
+        for i, (p, item) in enumerate(zip(paths, req.photos)):
+            motion = item.motion
+            if motion not in media.MOTIONS:
+                motion = media.AUTO_ORDER[i % len(media.AUTO_ORDER)]
+            progress(i / (n + 1), f"사진 {i + 1}/{n} 움직이는 영상으로 만드는 중")
+            out = store.OUTPUTS / f"{base}_{stamp}_{i + 1:02d}.mp4"
+            media.photo_to_clip(p, out, req.ratio, req.fit, seconds, motion)
+            clips.append(out)
+        if req.output == "each":
+            for i, c in enumerate(clips):
+                _output(job, c, f"{i + 1}번 사진")
+            return
+        groups = media.split_groups([seconds] * n, 3 if req.output == "three" else 1)
+        progress(n / (n + 1), "하나로 합치는 중")
+        for g, idx in enumerate(groups):
+            label = f"{g + 1}번 묶음 ({_span('사진', idx)})" if len(groups) > 1 else "합친 영상"
+            out = store.OUTPUTS / (f"{base}_{stamp}_합본{g + 1 if len(groups) > 1 else ''}.mp4")
+            media.merge_clips([clips[k] for k in idx], out, req.ratio, "cover", 0, False, req.transition)
+            _output(job, out, label)
+        for c in clips:
+            c.unlink(missing_ok=True)
+
+    return _start("photo-video", work)
+
+
+class MergeJob(BaseModel):
+    name: str = "합친영상"
+    videos: list[str]
+    groups: int = 1
+    ratio: str = "9:16"
+    fit: str = "cover"
+    max_seconds: float = 0
+    keep_audio: bool = False
+    transition: bool = False
+
+
+def _resolve_video(fid: str) -> Path:
+    if fid.startswith("out:"):  # 이 프로그램이 만든 결과물
+        name = fid[4:]
+        p = store.OUTPUTS / name
+        if "/" in name or "\\" in name or not p.exists():
+            raise HTTPException(404, "결과 파일을 찾을 수 없습니다.")
+        return p
+    return _upload_path(fid)
+
+
+@app.post("/api/jobs/merge")
+def job_merge(req: MergeJob):
+    if not req.videos:
+        raise HTTPException(400, "영상을 올려 주세요.")
+    if req.ratio not in media.RATIOS:
+        raise HTTPException(400, "화면 비율을 다시 골라 주세요.")
+    paths = [_resolve_video(v) for v in req.videos]
+    stamp = time.strftime("%m%d_%H%M%S")
+    base = _safe_name(req.name)
+
+    def work(job, progress):
+        durs = []
+        for p in paths:
+            d = media.probe(p)["duration"]
+            durs.append(min(d, req.max_seconds) if req.max_seconds > 0 else d)
+        groups = media.split_groups(durs, max(1, min(3, req.groups)))
+        for g, idx in enumerate(groups):
+            progress(g / len(groups), f"{g + 1}/{len(groups)}번째 영상 합치는 중")
+            label = f"{g + 1}번 묶음 ({_span('영상', idx)})" if len(groups) > 1 else "합친 영상"
+            out = store.OUTPUTS / (f"{base}_{stamp}{'_' + str(g + 1) if len(groups) > 1 else ''}.mp4")
+            media.merge_clips([paths[k] for k in idx], out, req.ratio, req.fit,
+                              req.max_seconds, req.keep_audio, req.transition)
+            _output(job, out, label)
+
+    return _start("merge", work)
+
+
+@app.get("/api/jobs/{jid}")
+def job_status(jid: str):
+    job = JOBS.get(jid)
+    if not job:
+        raise HTTPException(404, "작업을 찾을 수 없습니다. 서버를 다시 켰다면 다시 실행해 주세요.")
+    return job
+
+
+# ---------------------------------------------------------------- Mac 연동
+
+class OpenApp(BaseModel):
+    app: str
+
+
+@app.post("/api/open-app")
+def open_app(req: OpenApp):
+    allowed = {"Vrew": "Vrew", "CapCut": "CapCut"}
+    name = allowed.get(req.app)
+    if not name:
+        raise HTTPException(400, "열 수 없는 앱입니다.")
+    if sys.platform != "darwin":
+        raise HTTPException(400, "앱 바로 열기는 Mac에서만 됩니다.")
+    r = subprocess.run(["open", "-a", name], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise HTTPException(400, f"{name} 앱을 찾지 못했습니다. 설치되어 있는지 확인해 주세요.")
+    return {"ok": True}
+
+
+class Reveal(BaseModel):
+    file: str = ""
+
+
+@app.post("/api/reveal")
+def reveal(req: Reveal):
+    if "/" in req.file or "\\" in req.file:
+        raise HTTPException(400, "잘못된 파일입니다.")
+    target = store.OUTPUTS / req.file if req.file else store.OUTPUTS
+    if not target.exists():
+        raise HTTPException(404, "파일을 찾을 수 없습니다.")
+    if sys.platform != "darwin":
+        raise HTTPException(400, f"Finder 열기는 Mac에서만 됩니다. 저장 위치: {target}")
+    subprocess.run(["open", "-R", str(target)] if req.file else ["open", str(target)])
+    return {"ok": True}
+
+
+@app.get("/api/health")
+def health():
+    return {"ffmpeg": bool(shutil.which("ffmpeg")), "outputs": str(store.OUTPUTS),
+            "platform": sys.platform}
+
+
+# ---------------------------------------------------------------- 정적 파일
+
+app.mount("/files/uploads", StaticFiles(directory=store.UPLOADS), name="uploads")
+app.mount("/files/outputs", StaticFiles(directory=store.OUTPUTS), name="outputs")
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+@app.get("/")
+def index():
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})
+
+
+def main():
+    import uvicorn
+
+    url = f"http://{HOST}:{PORT}"
+    print(f"\n  영상 작업실이 켜졌어요 →  {url}\n  끄려면 이 창에서 Ctrl+C\n")
+    if os.environ.get("NO_BROWSER") != "1":
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()
