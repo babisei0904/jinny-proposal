@@ -3,3 +3,5 @@ uvicorn>=0.29
 python-multipart>=0.0.9
 pillow>=10.0
 pillow-heif>=0.16
+edge-tts>=6.1
+google-genai>=1.0

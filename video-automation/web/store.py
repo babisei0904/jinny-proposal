@@ -33,7 +33,25 @@ DEFAULT_SETTINGS = {
         "vrew_web": "https://vrew.ai/ko/",
         "taobao": "http://127.0.0.1:8420",
     },
+    "gemini_key": "",
+    "gemini_model": "gemini-2.5-flash",
+    "gemini_tts_model": "gemini-2.5-flash-preview-tts",
+    "fish_key": "",
+    "fish_model": "s2.1-pro-free",
+    "fish_voices": [],
+    "opening_presets": [
+        "요즘 난리 난 이 제품, 과연 소문대로 좋을까요?",
+        "이거 모르면 진짜 손해예요.",
+        "살림 고수들은 이미 다 쓰고 있대요.",
+    ],
+    "outro_presets": [
+        "자세한 사항은 프로필 링크를 확인해주세요.",
+        "구매 링크는 고정 댓글에 있어요.",
+        "저장해두고 필요할 때 꺼내보세요.",
+    ],
 }
+SETTING_KEYS = ["gemini_key", "gemini_model", "gemini_tts_model", "fish_key", "fish_model"]
+LIST_KEYS = ["opening_presets", "outro_presets"]
 
 _lock = threading.Lock()
 
@@ -64,6 +82,17 @@ def save_settings(data: dict) -> dict:
         cur = get_settings()
         links = {k: str(v).strip() for k, v in (data.get("links") or {}).items() if isinstance(v, str)}
         cur["links"].update(links)
+        for k in SETTING_KEYS:
+            if isinstance(data.get(k), str):
+                cur[k] = data[k].strip()
+        for k in LIST_KEYS:
+            if isinstance(data.get(k), list):
+                cur[k] = [str(x).strip() for x in data[k] if str(x).strip()][:30]
+        if isinstance(data.get("fish_voices"), list):
+            cur["fish_voices"] = [
+                {"name": str(v.get("name", "")).strip()[:30] or "내 목소리", "id": str(v.get("id", "")).strip()[:80],
+                 "gender": "male" if v.get("gender") == "male" else "female"}
+                for v in data["fish_voices"] if isinstance(v, dict) and str(v.get("id", "")).strip()][:30]
         _write(SETTINGS_FILE, cur)
     return cur
 
@@ -80,14 +109,33 @@ def _clean(p: dict) -> dict:
     }
 
 
+SEEDED_FILE = DATA / "seeded.json"
+
+
 def list_prompts() -> list[dict]:
+    """처음에는 기본 프롬프트를 넣고, 나중에 추가된 기본 프롬프트도 한 번씩만 채워 넣는다."""
     with _lock:
+        seed = _read(DEFAULT_PROMPTS, [])
+        items = _read(PROMPTS_FILE, []) if PROMPTS_FILE.exists() else []
+        seeded = set(_read(SEEDED_FILE, []))
         if not PROMPTS_FILE.exists():
-            seed = _read(DEFAULT_PROMPTS, [])
-            now = time.time()
-            items = [{"id": uuid.uuid4().hex[:12], **_clean(p), "updated": now} for p in seed]
+            seeded = set()
+        now = time.time()
+        changed = not PROMPTS_FILE.exists()
+        for p in seed:
+            key = p.get("key") or p.get("title")
+            if key in seeded:
+                continue
+            if PROMPTS_FILE.exists() and not p.get("key"):
+                seeded.add(key)  # 예전 버전에서 이미 넣었던 기본 프롬프트
+                continue
+            items.append({"id": uuid.uuid4().hex[:12], **_clean(p), "updated": now})
+            seeded.add(key)
+            changed = True
+        if changed:
             _write(PROMPTS_FILE, items)
-        return _read(PROMPTS_FILE, [])
+        _write(SEEDED_FILE, sorted(seeded))
+        return items
 
 
 def add_prompt(p: dict) -> dict:

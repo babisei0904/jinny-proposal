@@ -49,7 +49,8 @@ def ffprobe_bin() -> str:
 def probe(path: Path) -> dict:
     out = subprocess.run(
         [ffprobe_bin(), "-v", "error", "-show_entries",
-         "format=duration:stream=codec_type,width,height", "-of", "json", str(path)],
+         "format=duration:stream=codec_type,width,height:stream_tags=rotate:stream_side_data=rotation",
+         "-of", "json", str(path)],
         capture_output=True, text=True,
     )
     if out.returncode != 0:
@@ -57,10 +58,21 @@ def probe(path: Path) -> dict:
     data = json.loads(out.stdout or "{}")
     streams = data.get("streams", [])
     video = next((s for s in streams if s.get("codec_type") == "video"), {})
+    w, h = video.get("width"), video.get("height")
+    rot = 0
+    try:
+        rot = int(float((video.get("tags") or {}).get("rotate", 0)))
+        for sd in video.get("side_data_list") or []:
+            if "rotation" in sd:
+                rot = int(float(sd["rotation"]))
+    except (TypeError, ValueError):
+        rot = 0
+    if w and h and abs(rot) % 180 == 90:  # 아이폰 세로 영상은 회전 정보로 저장됨
+        w, h = h, w
     return {
         "duration": float(data.get("format", {}).get("duration") or 0),
-        "width": video.get("width"),
-        "height": video.get("height"),
+        "width": w,
+        "height": h,
         "has_audio": any(s.get("codec_type") == "audio" for s in streams),
     }
 
@@ -81,6 +93,15 @@ def normalize_photo(src: Path, dst: Path) -> None:
             if r.returncode == 0:
                 return
         raise RuntimeError(f"사진을 열 수 없습니다: {src.name}")
+
+
+def normalize_asset(src: Path, dst: Path) -> None:
+    """로고·스티커처럼 투명 배경을 살려야 하는 이미지는 PNG로 저장한다."""
+    try:
+        img = ImageOps.exif_transpose(Image.open(src)).convert("RGBA")
+        img.save(dst, "PNG")
+    except Exception:
+        raise RuntimeError(f"이미지를 열 수 없습니다: {src.name}")
 
 
 def _cover(img: Image.Image, w: int, h: int) -> Image.Image:

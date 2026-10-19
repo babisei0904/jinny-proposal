@@ -248,14 +248,10 @@ function renderResults(box, outputs) {
 const moveItem = (arr, i, d) => { const j = i + d; if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; };
 
 /* ------------------------------------------------------------ 대시보드 */
-function viewDashboard(v) {
-  const kinds = [
-    { n: 1, t: "여행 숏핑숏츠", d: "사진 7장으로 움직이는 영상을 만들어 숏츠로", steps: ["사진 → 영상 (플로우 또는 무료 모션)", "1~3개로 합치기", "숏튜브 쇼핑숏츠에 올려 대본·목소리·자막"], btns: [["사진 → 영상", "go:photo", true], ["숏튜브", "link:shorttube_shopping"]] },
-    { n: 2, t: "쇼핑숏츠", d: "타오바오 영상의 자막·음성을 지우고 대본에 맞춰 편집", steps: ["타오바오 영상 다운로드", "숏튜브 쇼핑숏츠에 최대 3개 올리기", "대본 각색 → 목소리 → 완료"], btns: [["숏튜브", "link:shorttube_shopping", true], ["타오바오 자동화", "link:taobao"]] },
-    { n: 3, t: "일상 컷편집", d: "짧은 컷이 대본에 맞춰 빠르게 바뀌는 영상", steps: ["장면 분석은 GPT 프롬프트로", "클립을 짧게 잘라 1~3개로 합치기", "숏튜브 쇼핑숏츠로 마무리"], btns: [["클립 합치기", "go:merge?preset=daily", true], ["숏튜브", "link:shorttube_shopping"]] },
-    { n: 4, t: "vlog · 일반 영상", d: "한 장면이 길게 이어지는 영상", steps: ["영상을 순서대로 1~3개로 합치기", "숏튜브 쇼핑숏츠로 마무리"], btns: [["클립 합치기", "go:merge?preset=vlog", true], ["숏튜브", "link:shorttube_shopping"]] },
-  ];
+async function viewDashboard(v) {
   const tools = [
+    ["사진 → 영상", "사진 7장을 움직이는 영상으로", "구글 플로우 · 무료 모션", "go:photo"],
+    ["클립 합치기", "여러 영상을 1~3개로 이어 붙이기", "내 컴퓨터", "go:merge"],
     ["자막 제거", "중국어 자막 지우기", "숏튜브", "link:shorttube_subtitle"],
     ["영상 자르기", "구간 자르기 · 9:16 크롭", "숏튜브", "link:shorttube_cut"],
     ["썸네일 제작", "장면 캡처 + 문구", "숏튜브", "link:shorttube_thumbnail"],
@@ -268,24 +264,65 @@ function viewDashboard(v) {
     ["자막 만들기", "음성으로 자막 자동 생성", "브루 앱", "app:Vrew"],
     ["Gemini", "이미지·영상 질문", "Gemini", "link:gemini"],
   ];
-  const pinned = S.prompts.filter((p) => p.pinned);
+  const projs = await api("GET", "/api/projects").catch(() => []);
   v.innerHTML = `
     <h1>영상 작업실</h1>
-    <p class="lead">1~4번 영상은 숏튜브 쇼핑숏츠로 만들고, 재료(사진 영상·합치기·프롬프트)는 여기서 준비해요.</p>
-    <h2>영상 만들기</h2>
-    <div class="grid g4">${kinds.map((k) => `<div class="card stack" style="gap:0">
-      <span class="num">${k.n}</span><h3>${k.t}</h3><p class="muted" style="margin:0;font-size:13.5px">${k.d}</p>
-      <ol class="steps">${k.steps.map((s) => `<li>${s}</li>`).join("")}</ol>
-      <div class="row" style="margin-top:auto">${k.btns.map(([l, a, pr]) => `<button class="btn sm ${pr ? "primary" : ""}" data-a="${a}">${l}${a.startsWith("link:") ? " ↗" : ""}</button>`).join("")}</div>
-    </div>`).join("")}</div>
-    <h2>편집 도구 <span class="badge">숏튜브에서 열려요</span></h2>
-    <div class="grid g4">${tools.map(toolCard).join("")}</div>
+    <p class="lead">쇼핑·여행·일상·브이로그 영상을 한 곳에서 만들어요.</p>
+    <div class="card make-hero" style="margin-top:20px">
+      <div class="stack" style="gap:6px;flex:1;min-width:240px">
+        <span class="badge brand" style="align-self:start">숏튜브 쇼핑숏츠와 같은 5단계</span>
+        <h2 style="margin:4px 0 0;font-size:24px">🎬 영상 만들기</h2>
+        <p class="muted" style="margin:0">원본 입력 → 대본 각색 → 레이아웃 세팅 → 세부 편집 → 완료</p>
+        <p class="faint" style="margin:0">영상을 올리면 AI가 대본을 쓰고, 목소리·자막·레이아웃을 입혀 MP4로 만들어요. 유료 API 없이 동작해요.</p>
+      </div>
+      <a class="btn primary big" href="#/make">+ 새 영상 만들기</a>
+    </div>
+    ${projs.length ? `<h2>내 작업 <span class="badge">${projs.length}</span></h2>
+    <div class="grid g3" id="projs">${projs.slice(0, 9).map((x) => `<div class="card tight proj">
+      <div class="pthumb">${x.poster ? `<img src="${x.poster}" alt="">` : "🎞"}</div>
+      <div class="stack" style="gap:2px;min-width:0;flex:1"><b class="n">${esc(x.name)}</b>
+        <span class="faint">${x.step}단계 · ${["원본 입력", "대본 각색", "레이아웃 세팅", "세부 편집", "완료"][x.step - 1]} · 장면 ${x.scenes}개</span>
+        <span class="faint">${new Date(x.updated * 1000).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}${x.render ? " · 영상 완성" : ""}</span>
+        <div class="row" style="margin-top:4px"><a class="btn sm primary" href="#/make?id=${x.id}">이어서 하기</a><button class="btn sm ghost danger" data-pdel="${x.id}">삭제</button></div></div></div>`).join("")}</div>` : ""}
+    <h2>편집 도구</h2>
+    <div class="grid g3">${tools.map(toolCard).join("")}</div>
     <h2>AI 도구 <span class="badge">무료로 쓰는 사이트·앱 바로가기</span></h2>
     <div class="grid g4" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">${ai.map(toolCard).join("")}</div>
-    <h2>즐겨찾는 프롬프트 <a class="btn sm ghost" href="#/prompts">전체 보기 →</a></h2>
-    <div class="grid g3" id="pinned">${pinned.length ? pinned.map((p) => promptCard(p)).join("") : `<p class="muted">프롬프트 보관함에서 ☆를 누르면 여기에 보여요.</p>`}</div>`;
+    <h2>자주 쓰는 프롬프트 <span class="row" style="margin-left:auto;gap:6px"><button class="btn sm" id="newP">+ 새 프롬프트</button><a class="btn sm ghost" href="#/prompts">보관함 전체 보기 →</a></span></h2>
+    <div class="grid g3" id="pcats"></div>`;
   v.querySelectorAll("[data-a]").forEach((el) => (el.onclick = () => act(el.dataset.a)));
-  bindPromptCards($("#pinned", v), () => viewDashboard(v));
+  v.querySelectorAll("[data-pdel]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("이 작업을 삭제할까요? 만든 영상도 함께 지워져요.")) return;
+    await api("DELETE", `/api/projects/${b.dataset.pdel}`).catch(fail); viewDashboard(v);
+  }));
+  $("#newP", v).onclick = () => editPrompt(null, () => renderPromptCats($("#pcats", v)));
+  renderPromptCats($("#pcats", v));
+}
+/* 분류별 프롬프트 카드: 화살표 목록에서 고르고 바로 복사 */
+function renderPromptCats(box) {
+  const sel = store.get("catSel", {});
+  const cats = categories();
+  box.innerHTML = cats.map((c) => {
+    const list = S.prompts.filter((p) => p.category === c);
+    const cur = list.find((p) => p.id === sel[c]) || list.find((p) => p.pinned) || list[0];
+    const t = TARGETS[cur?.target] || TARGETS.none;
+    return `<div class="card tight prompt pcat" data-cat="${esc(c)}">
+      <div class="row between"><b>${esc(c)}</b><span class="faint">${list.length}개</span></div>
+      <select data-psel="${esc(c)}">${list.map((p) => `<option value="${p.id}" ${p.id === cur?.id ? "selected" : ""}>${p.pinned ? "★ " : ""}${esc(p.title)}</option>`).join("")}</select>
+      <div class="pv"><span>${esc(cur?.body || "")}</span></div>
+      ${cur && varsOf(cur.body).length ? `<div class="vars">빈칸: ${varsOf(cur.body).map(esc).join(", ")}</div>` : ""}
+      <div class="row"><button class="btn sm primary" data-pact="copy">복사하기</button>${t.link ? `<button class="btn sm" data-pact="open">복사하고 ${esc(t.label)} 열기</button>` : ""}
+        <span style="flex:1"></span><button class="btn sm ghost" data-pact="edit">수정</button><button class="btn sm ghost" data-pact="new" title="이 분류에 새 프롬프트">+ 새로</button></div></div>`;
+  }).join("") || '<p class="muted">프롬프트가 없어요. [+ 새 프롬프트]로 만들어 보세요.</p>';
+  box.querySelectorAll("[data-psel]").forEach((el) => (el.onchange = () => { sel[el.dataset.psel] = el.value; store.set("catSel", sel); renderPromptCats(box); }));
+  box.querySelectorAll(".pcat").forEach((card) => card.querySelectorAll("[data-pact]").forEach((b) => (b.onclick = () => {
+    const c = card.dataset.cat, id = card.querySelector("select").value, p = S.prompts.find((x) => x.id === id);
+    const act = b.dataset.pact;
+    if (act === "copy") usePrompt(p);
+    if (act === "open") usePrompt(p, { open: true });
+    if (act === "edit") editPrompt(p, () => renderPromptCats(box));
+    if (act === "new") { S.promptCat = c; editPrompt(null, () => { const last = S.prompts[S.prompts.length - 1]; if (last) { sel[last.category] = last.id; store.set("catSel", sel); } renderPromptCats(box); }); }
+  })));
 }
 function toolCard([t, d, via, a]) {
   return `<div class="card tool" data-a="${a}"><span class="t">${t}</span><span class="d">${d}</span><span class="via">${via} ${a.startsWith("go:") ? "→" : "↗"}</span></div>`;
@@ -488,26 +525,66 @@ function viewPrompts(v) {
 /* ------------------------------------------------------------ 설정 */
 async function viewSettings(v) {
   const health = await api("GET", "/api/health").catch(() => ({}));
-  const links = S.settings.links;
-  v.innerHTML = `
+  const st = S.settings, links = st.links;
+  const fv = (st.fish_voices || []).slice();
+  const render = () => {
+    v.innerHTML = `
     <h1>설정</h1>
-    <p class="lead">바로가기 주소를 바꿀 수 있어요. 숏튜브에서 각 기능 페이지를 연 뒤 주소창 주소를 복사해 넣으면 버튼이 그 화면으로 바로 열려요.</p>
-    <div class="card" style="margin-top:20px"><div class="kv">
-      ${Object.keys(LINK_LABELS).map((k) => `<label class="faint" for="l_${k}" style="font-size:14px;color:var(--text);font-weight:600">${LINK_LABELS[k]}</label><input type="text" id="l_${k}" data-link="${k}" value="${esc(links[k] || "")}">`).join("")}
+    <p class="lead">무료 AI 연결, 목소리, 멘트 프리셋, 바로가기 주소를 정해요. 키는 이 컴퓨터의 data 폴더에만 저장돼요.</p>
+    <h2>🤖 무료 AI 연결</h2>
+    <div class="card stack">
+      <div><b>Gemini API 키 (무료)</b> <span class="faint">— 영상 자동 분석·대본 각색, Gemini 목소리에 써요</span></div>
+      <div class="faint" style="font-size:13px"><a class="link" href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>에서 무료로 발급받아 붙여넣으세요. 무료 등급은 하루 사용량이 정해져 있고, 입력 내용이 구글 서비스 개선에 쓰일 수 있어요.</div>
+      <div class="grid g2"><label class="f">API 키<input type="password" id="gk" value="${esc(st.gemini_key || "")}" placeholder="AIza…"></label>
+        <label class="f">분석 모델<input type="text" id="gm" value="${esc(st.gemini_model || "gemini-2.5-flash")}"></label></div>
+      <label class="f">목소리 모델<input type="text" id="gtm" value="${esc(st.gemini_tts_model || "gemini-2.5-flash-preview-tts")}"></label>
+      <div class="hr"></div>
+      <div><b>Fish Audio API 키 (무료 모델)</b> <span class="faint">— 내가 만든 목소리 모델을 쓸 때</span></div>
+      <div class="faint" style="font-size:13px"><a class="link" href="https://fish.audio/" target="_blank">fish.audio</a> 개발자 메뉴에서 API 키를 만들어 넣으세요. 모델은 무료인 <b>s2.1-pro-free</b>로 둬요.</div>
+      <div class="grid g2"><label class="f">API 키<input type="password" id="fk" value="${esc(st.fish_key || "")}"></label>
+        <label class="f">모델<input type="text" id="fm" value="${esc(st.fish_model || "s2.1-pro-free")}"></label></div>
+      <b style="font-size:14px">내 Fish Audio 목소리 목록</b>
+      <div class="faint" style="font-size:13px">목소리 페이지 주소의 ID(예: 802e3bc2b27e49c2995d23ef70e6ac89)를 넣어요.</div>
+      <div class="stack" id="fvList">${fv.map((x, i) => `<div class="row" style="flex-wrap:nowrap"><input type="text" data-fvn="${i}" value="${esc(x.name)}" placeholder="이름" style="max-width:160px">
+        <input type="text" data-fvi="${i}" value="${esc(x.id)}" placeholder="목소리 ID"><select data-fvg="${i}" style="max-width:100px"><option value="female" ${x.gender !== "male" ? "selected" : ""}>여성</option><option value="male" ${x.gender === "male" ? "selected" : ""}>남성</option></select>
+        <button class="btn sm ghost danger" data-fvx="${i}">✕</button></div>`).join("")}</div>
+      <div><button class="btn sm" id="fvAdd">+ 목소리 추가</button></div>
     </div>
-    <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="btn primary" id="saveS">저장</button></div></div>
+    <h2>🎬 오프닝·아웃트로 멘트 프리셋</h2>
+    <div class="card grid g2">
+      <label class="f">오프닝 멘트 (한 줄에 하나)<textarea id="opP" rows="5">${esc((st.opening_presets || []).join("\n"))}</textarea></label>
+      <label class="f">아웃트로 멘트 (한 줄에 하나)<textarea id="otP" rows="5">${esc((st.outro_presets || []).join("\n"))}</textarea></label>
+    </div>
+    <h2>🔗 바로가기 주소</h2>
+    <p class="faint" style="margin:-4px 0 10px">숏튜브에서 각 기능 페이지를 연 뒤 주소창 주소를 복사해 넣으면 버튼이 그 화면으로 바로 열려요.</p>
+    <div class="card"><div class="kv">
+      ${Object.keys(LINK_LABELS).map((k) => `<label for="l_${k}" style="font-size:14px;font-weight:600">${LINK_LABELS[k]}</label><input type="text" id="l_${k}" data-link="${k}" value="${esc(links[k] || "")}">`).join("")}
+    </div></div>
+    <div class="row" style="margin-top:16px;justify-content:flex-end;position:sticky;bottom:12px"><button class="btn primary big" id="saveS">설정 저장</button></div>
     <h2>상태</h2>
     <div class="card stack">
       <div class="row">${health.ffmpeg ? '<span class="badge ok">ffmpeg 준비됨</span>' : '<span class="badge warn">ffmpeg 없음 · 터미널에서 brew install ffmpeg</span>'}</div>
       <div class="faint">결과 저장 위치: ${esc(health.outputs || "")}</div>
       <div><button class="btn sm" id="folder">결과 폴더 열기</button></div>
     </div>`;
-  $("#saveS", v).onclick = async () => {
-    const data = { links: {} };
-    v.querySelectorAll("[data-link]").forEach((el) => (data.links[el.dataset.link] = el.value));
-    try { S.settings = await api("PUT", "/api/settings", data); toast("저장했어요"); } catch (e) { fail(e); }
+    const sync = () => {
+      v.querySelectorAll("[data-fvn]").forEach((el) => (fv[+el.dataset.fvn].name = el.value));
+      v.querySelectorAll("[data-fvi]").forEach((el) => (fv[+el.dataset.fvi].id = el.value));
+      v.querySelectorAll("[data-fvg]").forEach((el) => (fv[+el.dataset.fvg].gender = el.value));
+    };
+    $("#fvAdd", v).onclick = () => { sync(); fv.push({ name: "", id: "", gender: "female" }); render(); };
+    v.querySelectorAll("[data-fvx]").forEach((b) => (b.onclick = () => { sync(); fv.splice(+b.dataset.fvx, 1); render(); }));
+    $("#saveS", v).onclick = async () => {
+      sync();
+      const data = { links: {}, gemini_key: $("#gk", v).value, gemini_model: $("#gm", v).value, gemini_tts_model: $("#gtm", v).value,
+        fish_key: $("#fk", v).value, fish_model: $("#fm", v).value, fish_voices: fv,
+        opening_presets: $("#opP", v).value.split("\n"), outro_presets: $("#otP", v).value.split("\n") };
+      v.querySelectorAll("[data-link]").forEach((el) => (data.links[el.dataset.link] = el.value));
+      try { S.settings = await api("PUT", "/api/settings", data); toast("저장했어요"); } catch (e) { fail(e); }
+    };
+    $("#folder", v).onclick = () => api("POST", "/api/reveal", { file: "" }).catch(fail);
   };
-  $("#folder", v).onclick = () => api("POST", "/api/reveal", { file: "" }).catch(fail);
+  render();
 }
 
 /* ------------------------------------------------------------ 라우터 */
@@ -516,14 +593,19 @@ async function route() {
   const [name, qs] = raw.split("?");
   const query = new URLSearchParams(qs || "");
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("on", a.dataset.route === name));
+  if (S.prompts.length === 0 || name === "" || name === "make") S.prompts = await api("GET", "/api/prompts").catch(() => S.prompts);
   const v = $("#view");
   window.scrollTo(0, 0);
+  try { window.__leave?.(); } catch {}
+  window.__leave = null;
+  document.body.classList.toggle("wide-main", name === "make");
   try {
-    if (name === "photo") viewPhoto(v);
+    if (name === "make") await viewMaker(v, query);
+    else if (name === "photo") viewPhoto(v);
     else if (name === "merge") viewMerge(v, query);
     else if (name === "prompts") viewPrompts(v);
     else if (name === "settings") await viewSettings(v);
-    else viewDashboard(v);
+    else await viewDashboard(v);
   } catch (e) { v.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`; }
 }
 async function init() {

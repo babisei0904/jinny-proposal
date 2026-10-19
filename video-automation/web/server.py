@@ -13,19 +13,22 @@ import uuid
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import hashlib
+import json
+
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import media, store
+from . import media, projects, store, tts
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("PORT", "8421"))
 STATIC = Path(__file__).resolve().parent / "static"
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".bmp", ".tif", ".tiff"}
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
-ID_RE = re.compile(r"^[0-9a-f]{32}\.(jpg|mp4|mov|m4v|webm|mkv|avi)$")
+ID_RE = re.compile(r"^[0-9a-f]{32}\.(jpg|png|mp4|mov|m4v|webm|mkv|avi)$")
 
 app = FastAPI(title="영상 작업실")
 
@@ -101,7 +104,8 @@ def prompt_import(data: dict):
 # ---------------------------------------------------------------- 업로드
 
 @app.post("/api/upload")
-async def upload(files: list[UploadFile] = File(...)):
+async def upload(request: Request, files: list[UploadFile] = File(...)):
+    asset = request.query_params.get("asset") == "1"
     result = []
     for f in files:
         ext = Path(f.filename or "").suffix.lower()
@@ -113,9 +117,12 @@ async def upload(files: list[UploadFile] = File(...)):
             shutil.copyfileobj(f.file, out)
         item = {"name": f.filename}
         if ext in IMAGE_EXT:
-            dst = store.UPLOADS / f"{fid}.jpg"
+            dst = store.UPLOADS / (f"{fid}.png" if asset else f"{fid}.jpg")
             try:
-                media.normalize_photo(raw, dst)
+                if asset:
+                    media.normalize_asset(raw, dst)
+                else:
+                    media.normalize_photo(raw, dst)
             finally:
                 raw.unlink(missing_ok=True)
             item.update(id=dst.name, kind="image", url=f"/files/uploads/{dst.name}")
@@ -127,7 +134,8 @@ async def upload(files: list[UploadFile] = File(...)):
             media.poster(dst, thumb)
             item.update(id=dst.name, kind="video", url=f"/files/uploads/{dst.name}",
                         poster=f"/files/uploads/{thumb.name}" if thumb.exists() else None,
-                        duration=round(info["duration"], 2), width=info["width"], height=info["height"])
+                        duration=round(info["duration"], 2), width=info["width"], height=info["height"],
+                        size_mb=round(dst.stat().st_size / 1_048_576, 1))
         result.append(item)
     return result
 
@@ -140,7 +148,7 @@ JOBS: dict[str, dict] = {}
 def _start(kind: str, fn) -> dict:
     jid = uuid.uuid4().hex[:12]
     job = {"id": jid, "kind": kind, "status": "running", "progress": 0.0,
-           "message": "준비 중", "outputs": [], "error": None, "started": time.time()}
+           "message": "준비 중", "outputs": [], "result": None, "error": None, "started": time.time()}
     JOBS[jid] = job
 
     def progress(p: float, msg: str):
@@ -280,6 +288,207 @@ def job_status(jid: str):
     return job
 
 
+# ---------------------------------------------------------------- 영상 만들기 (프로젝트)
+
+def _project(pid: str) -> dict:
+    try:
+        return projects.load(pid)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/projects")
+def projects_list():
+    return projects.list_projects()
+
+
+@app.post("/api/projects")
+def projects_new(data: dict = Body(default={})):
+    return projects.new_project((data or {}).get("name", ""))
+
+
+@app.get("/api/projects/{pid}")
+def project_get(pid: str):
+    return _project(pid)
+
+
+@app.put("/api/projects/{pid}")
+def project_put(pid: str, data: dict):
+    _project(pid)
+    data["id"] = pid
+    return {"ok": True, "updated": projects.save(data)["updated"]}
+
+
+@app.delete("/api/projects/{pid}")
+def project_delete(pid: str):
+    _project(pid)
+    projects.delete(pid)
+    return {"ok": True}
+
+
+def _preset_body(pid_prompt: str, memo: str) -> str:
+    p = next((x for x in store.list_prompts() if x["id"] == pid_prompt), None)
+    if not p:
+        return ""
+    return re.sub(r"\{([^{}\n]{1,24})\}", lambda m: memo.strip() or "(없음)", p["body"])
+
+
+@app.get("/api/projects/{pid}/prompt")
+def project_prompt(pid: str, mode: str = "chatgpt"):
+    p = _project(pid)
+    sc = p.get("script") or {}
+    return {"prompt": projects.ai_prompt(p, _preset_body(sc.get("presetId", ""), sc.get("memo", "")),
+                                         _preset_body(sc.get("titlePresetId", ""), sc.get("memo", "")),
+                                         "gemini" if mode == "gemini" else "chatgpt")}
+
+
+@app.post("/api/projects/{pid}/storyboard")
+def project_storyboard(pid: str):
+    p = _project(pid)
+    try:
+        f = projects.storyboard(p)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"url": f"/files/projects/{pid}/analysis/{f.name}?t={int(time.time())}"}
+
+
+@app.post("/api/projects/{pid}/split")
+def project_split(pid: str, data: dict):
+    p = _project(pid)
+    if not (data.get("text") or "").strip():
+        raise HTTPException(400, "대본을 입력해 주세요.")
+    return {"scenes": projects.split_manual(p, data["text"], data.get("opening", ""), data.get("outro", ""))}
+
+
+@app.post("/api/projects/{pid}/apply")
+def project_apply(pid: str, data: dict):
+    p = _project(pid)
+    try:
+        return projects.parse_ai_result(p, data.get("text", ""), data.get("opening", ""), data.get("outro", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/projects/{pid}/analyze")
+def project_analyze(pid: str):
+    p = _project(pid)
+    if not projects.segments(p):
+        raise HTTPException(400, "1단계에서 영상을 먼저 올려 주세요.")
+    settings = store.get_settings()
+    sc = p.get("script") or {}
+    prompt = projects.ai_prompt(p, _preset_body(sc.get("presetId", ""), sc.get("memo", "")),
+                                _preset_body(sc.get("titlePresetId", ""), sc.get("memo", "")), "gemini")
+
+    def work(job, progress):
+        raw = projects.gemini_analyze(p, prompt, settings.get("gemini_key", ""),
+                                      settings.get("gemini_model", "gemini-2.5-flash"), progress)
+        progress(0.9, "3단계: 대본을 7-12자 자연스러운 자막 장면으로 분할 정제 중...")
+        try:
+            job["result"] = projects.parse_ai_result(p, raw, sc.get("opening", ""), sc.get("outro", ""))
+        except ValueError as e:
+            raise RuntimeError(str(e))
+
+    return _start("analyze", work)
+
+
+@app.get("/api/projects/{pid}/plan")
+def project_plan(pid: str):
+    return projects.plan(_project(pid))
+
+
+@app.post("/api/projects/{pid}/voice")
+def project_voice(pid: str, force: int = 0):
+    p = _project(pid)
+    settings = store.get_settings()
+    if force:
+        projects.forget_voices(p)
+
+    def work(job, progress):
+        projects.synth_missing(p, settings, progress)
+        job["result"] = {"ok": True}
+
+    return _start("voice", work)
+
+
+@app.get("/api/voices")
+def voices():
+    return {"voices": tts.voices(store.get_settings()), "styles": tts.STYLES}
+
+
+@app.post("/api/tts/preview")
+def tts_preview(data: dict):
+    settings = store.get_settings()
+    style = next((x for x in tts.STYLES if x["id"] == data.get("style")), tts.STYLES[0])
+    speed = float(style["speed"]) * float(data.get("speed") or 1)
+    pitch = int(style["pitch"]) + int(data.get("pitch") or 0)
+    text = (data.get("text") or "안녕하세요, 오늘 소개할 제품은 정말 신기한 아이템이에요.").strip()[:200]
+    key = hashlib.sha1(json.dumps([data.get("engine"), data.get("voice"), speed, pitch, text,
+                                   style.get("prompt")], ensure_ascii=False).encode()).hexdigest()[:16]
+    d = store.DATA / "tts_preview"
+    d.mkdir(exist_ok=True)
+    out = d / f"{key}.mp3"
+    if not out.exists():
+        try:
+            tts.synthesize(text, data.get("engine", "edge"), data.get("voice", ""), speed, pitch, settings, out,
+                           style.get("prompt", ""))
+        except RuntimeError as e:
+            raise HTTPException(400, str(e))
+    return {"url": f"/files/tts_preview/{out.name}"}
+
+
+@app.get("/api/layouts")
+def layouts():
+    return projects.layout_presets()
+
+
+@app.post("/api/layouts")
+def layout_save(data: dict):
+    if not isinstance(data.get("layout"), dict):
+        raise HTTPException(400, "레이아웃이 없습니다.")
+    return projects.save_layout_preset(data.get("name", ""), data["layout"])
+
+
+@app.delete("/api/layouts/{lid}")
+def layout_delete(lid: str):
+    projects.delete_layout_preset(lid)
+    return {"ok": True}
+
+
+@app.post("/api/projects/{pid}/render")
+async def project_render(pid: str, manifest: str = Form(...), files: list[UploadFile] = File(default=[])):
+    p = _project(pid)
+    try:
+        frames = json.loads(manifest)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "렌더링 정보가 올바르지 않습니다.")
+    fdir = projects.pdir(pid) / "frames"
+    shutil.rmtree(fdir, ignore_errors=True)
+    fdir.mkdir()
+    for f in files:
+        name = Path(f.filename or "").name
+        if not re.match(r"^[a-z]+_[0-9a-zA-Z]+\.png$", name):
+            continue
+        with (fdir / name).open("wb") as out:
+            shutil.copyfileobj(f.file, out)
+    settings = store.get_settings()
+
+    def work(job, progress):
+        final = projects.render(p, settings, frames, fdir, progress)
+        info = media.probe(final)
+        thumb = final.with_suffix(".jpg")
+        media.poster(final, thumb)
+        url = f"/files/projects/{pid}/renders/{final.name}"
+        result = {"url": url, "file": final.name, "duration": round(info["duration"], 2),
+                  "size_mb": round(final.stat().st_size / 1_048_576, 1),
+                  "poster": f"/files/projects/{pid}/renders/{thumb.name}" if thumb.exists() else None}
+        cur = projects.load(pid)
+        cur["render"] = result
+        projects.save(cur)
+        job["result"] = result
+
+    return _start("render", work)
+
+
 # ---------------------------------------------------------------- Mac 연동
 
 class OpenApp(BaseModel):
@@ -302,13 +511,17 @@ def open_app(req: OpenApp):
 
 class Reveal(BaseModel):
     file: str = ""
+    project: str = ""
 
 
 @app.post("/api/reveal")
 def reveal(req: Reveal):
     if "/" in req.file or "\\" in req.file:
         raise HTTPException(400, "잘못된 파일입니다.")
-    target = store.OUTPUTS / req.file if req.file else store.OUTPUTS
+    root = store.OUTPUTS
+    if req.project:
+        root = projects.pdir(req.project) / "renders"
+    target = root / req.file if req.file else root
     if not target.exists():
         raise HTTPException(404, "파일을 찾을 수 없습니다.")
     if sys.platform != "darwin":
@@ -327,6 +540,9 @@ def health():
 
 app.mount("/files/uploads", StaticFiles(directory=store.UPLOADS), name="uploads")
 app.mount("/files/outputs", StaticFiles(directory=store.OUTPUTS), name="outputs")
+(store.DATA / "tts_preview").mkdir(exist_ok=True)
+app.mount("/files/tts_preview", StaticFiles(directory=store.DATA / "tts_preview"), name="tts_preview")
+app.mount("/files/projects", StaticFiles(directory=projects.PROJECTS), name="projects")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
