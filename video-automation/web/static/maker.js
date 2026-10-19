@@ -474,7 +474,7 @@ function openClipEditor(i, after) {
 }
 
 /* ---------------------------------------------------------------- 목소리 선택 상자 (2단계/4단계 공용) */
-const ENGINE_LABEL = { edge: "무료 · Edge (키 없음)", gemini: "Gemini 무료 키 (말투 지시 반영)", fish: "Fish Audio (내 목소리)", say: "Mac 기본 (인터넷 없이)" };
+const ENGINE_LABEL = { typecast: "타입캐스트 (API 키, 무료 플랜 월 한도)", edge: "무료 · Edge (키 없음)", gemini: "Gemini 무료 키 (말투 지시 반영)", fish: "Fish Audio (내 목소리)", say: "Mac 기본 (인터넷 없이)" };
 function voiceOptions(sel, gender = "all", withDefault = false) {
   const list = MK.voices.filter((v) => gender === "all" || v.gender === gender);
   const groups = {};
@@ -495,7 +495,7 @@ function ttsBox(p) {
     <select id="ttsStyle">${MK.styles.map((s) => `<option value="${s.id}" ${t.style === s.id ? "selected" : ""}>🎭 ${esc(s.name)}</option>`).join("")}</select>
     <div class="row faint" style="font-size:12.5px;gap:14px">
       <label class="row" style="gap:6px">속도 <input type="range" id="ttsSpeed" min="0.8" max="1.3" step="0.05" value="${t.speed || 1}" style="width:110px"> <span id="ttsSpeedL">${(+t.speed || 1).toFixed(2)}x</span></label>
-      <span>${t.engine === "gemini" ? "Gemini는 스타일 문장(말투 지시)이 그대로 반영돼요" : t.engine === "edge" ? "Edge는 스타일의 속도·톤만 반영돼요" : ""}</span></div>
+      <span>${t.engine === "gemini" ? "Gemini는 스타일 문장(말투 지시)이 그대로 반영돼요" : t.engine === "edge" ? "Edge는 스타일의 속도·톤만 반영돼요" : t.engine === "typecast" ? "타입캐스트는 스타일의 감정(기쁨·차분함·속삭임 등)과 속도가 반영돼요. 1글자 = 1크레딧" : ""}</span></div>
   </div>`;
 }
 function bindTtsBox(root, rerender) {
@@ -505,7 +505,10 @@ function bindTtsBox(root, rerender) {
   $("#ttsStyle", root).onchange = (e) => { p.tts.style = e.target.value; touch(); };
   $("#ttsSpeed", root).oninput = (e) => { p.tts.speed = +e.target.value; $("#ttsSpeedL", root).textContent = p.tts.speed.toFixed(2) + "x"; touch(); };
   $("#ttsPrev", root).onclick = async (e) => {
-    const b = e.target; b.disabled = true; b.textContent = "만드는 중…";
+    const b = e.target;
+    const vv = MK.voices.find((x) => x.engine === p.tts.engine && x.id === p.tts.voice);
+    if (vv?.preview) { MK.audio?.pause(); MK.audio = new Audio(vv.preview); MK.audio.play(); toast("타입캐스트 샘플 음성이에요 (크레딧 안 씀)"); return; }
+    b.disabled = true; b.textContent = "만드는 중…";
     try {
       const r = await api("POST", "/api/tts/preview", { engine: p.tts.engine, voice: p.tts.voice, style: p.tts.style, speed: p.tts.speed, text: p.scenes.slice(0, 4).map((s) => s.text).join(" ") || undefined });
       MK.audio?.pause(); MK.audio = new Audio(r.url); MK.audio.play();

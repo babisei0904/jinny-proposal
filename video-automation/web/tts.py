@@ -1,6 +1,7 @@
 """무료 목소리(TTS) 엔진.
 - edge   : Microsoft Edge 읽어주기 (키 필요 없음, 한국어 3명)
 - gemini : Gemini 무료 키로 쓰는 AI 성우 (말투 지시가 반영됨, 무료 사용량이 적음)
+- typecast : 타입캐스트 AI 성우 (API 키 필요, 무료 플랜은 매달 글자 수 한도)
 - fish   : Fish Audio 무료 모델 s2.1-pro-free (무료 API 키 필요, 내 목소리 모델 사용 가능)
 - say    : Mac 기본 음성 (인터넷 없이 동작)
 """
@@ -17,6 +18,11 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+from . import store
+
+TYPECAST_CACHE = store.DATA / "typecast_voices.json"
+TYPECAST_API = os.environ.get("TYPECAST_API_BASE", "https://api.typecast.ai")
 
 EDGE_VOICES = [
     {"engine": "edge", "id": "ko-KR-SunHiNeural", "name": "선희", "gender": "female", "desc": "밝고 또렷한 여성"},
@@ -40,26 +46,99 @@ SAY_VOICES = [
 ]
 
 STYLES = [
-    {"id": "basic", "name": "기본", "speed": 1.0, "pitch": 0,
-     "prompt": "Read this Korean text naturally and clearly"},
+    {"id": "basic", "name": "기본 (문맥에 맞춰 자동 감정)", "speed": 1.0, "pitch": 0,
+     "prompt": "Read this Korean text naturally and clearly", "emotion": "smart", "intensity": 1.0},
     {"id": "fast", "name": "빠르고 신나게 (쇼핑 숏츠)", "speed": 1.15, "pitch": 3,
-     "prompt": "Read this Korean text fast, upbeat and excited, like a viral shopping short"},
+     "prompt": "Read this Korean text fast, upbeat and excited, like a viral shopping short",
+     "emotion": "happy", "intensity": 1.3},
     {"id": "info", "name": "또박또박 정보 전달 (아나운서)", "speed": 1.05, "pitch": 0,
-     "prompt": "Read this Korean text like a confident news announcer, crisp and clear"},
+     "prompt": "Read this Korean text like a confident news announcer, crisp and clear",
+     "emotion": "toneup", "intensity": 1.0},
     {"id": "docu", "name": "내셔널지오그래픽 다큐 내레이터", "speed": 0.95, "pitch": -4,
-     "prompt": "Read this Korean text like a calm, deep National Geographic documentary narrator"},
+     "prompt": "Read this Korean text like a calm, deep National Geographic documentary narrator",
+     "emotion": "tonedown", "intensity": 1.2},
     {"id": "friend", "name": "친구에게 수다 떨듯", "speed": 1.08, "pitch": 2,
-     "prompt": "Read this Korean text casually, like chatting with a close friend, warm and playful"},
+     "prompt": "Read this Korean text casually, like chatting with a close friend, warm and playful",
+     "emotion": "happy", "intensity": 0.9},
     {"id": "slow", "name": "천천히 감성적으로", "speed": 0.88, "pitch": -2,
-     "prompt": "Read this Korean text slowly and emotionally, soft and warm"},
+     "prompt": "Read this Korean text slowly and emotionally, soft and warm", "emotion": "sad", "intensity": 0.7},
+    {"id": "whisper", "name": "속삭이듯 (ASMR)", "speed": 0.95, "pitch": 0,
+     "prompt": "Whisper this Korean text softly and intimately, like ASMR", "emotion": "whisper", "intensity": 1.0},
 ]
 
 
+def _tc_request(method: str, path: str, key: str, body: dict | None = None, timeout: int = 120):
+    req = urllib.request.Request(TYPECAST_API + path, method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"X-API-KEY": key, "Content-Type": "application/json"})
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode(errors="ignore")[:300]
+        friendly = {
+            401: "타입캐스트 API 키가 올바르지 않습니다. 설정에서 키를 다시 확인해 주세요.",
+            402: "타입캐스트 크레딧이 부족해요. 무료 플랜은 매달 정해진 글자 수만 쓸 수 있어요 (1글자 = 1크레딧).",
+            404: "타입캐스트에서 이 목소리를 찾지 못했어요. 설정에서 목소리 목록을 새로고침해 주세요.",
+            422: "타입캐스트가 읽을 수 없는 글자가 있어요. 특수문자를 빼고 다시 해 주세요.",
+            429: "타입캐스트 요청이 너무 많아요. 잠시 뒤 다시 해 주세요.",
+        }
+        raise RuntimeError(friendly.get(e.code, f"타입캐스트 오류 {e.code}: {msg}"))
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"타입캐스트에 연결하지 못했습니다: {e.reason}")
+
+
+def typecast_refresh(settings: dict) -> int:
+    """타입캐스트 목소리 목록을 받아 저장한다. 저장한 개수를 돌려준다."""
+    key = settings.get("typecast_key", "")
+    if not key:
+        raise RuntimeError("설정에서 타입캐스트 API 키를 먼저 넣어 주세요.")
+    model = settings.get("typecast_model") or "ssfm-v30"
+    with _tc_request("GET", f"/v3/voices?model={model}", key, timeout=60) as r:
+        data = json.loads(r.read().decode())
+    if isinstance(data, dict):
+        data = data.get("voices") or data.get("items") or data.get("data") or []
+    out = []
+    for v in data if isinstance(data, list) else []:
+        vid = v.get("voice_id")
+        if not vid:
+            continue
+        name = v.get("voice_name")
+        if isinstance(name, dict):
+            kor = name.get("kor") or name.get("ko") or ""
+            eng = name.get("eng") or name.get("en") or ""
+            name = f"{kor} ({eng})" if kor and eng and kor != eng else (kor or eng)
+        uses = v.get("use_cases") or []
+        age = {"child": "어린이", "teenager": "10대", "young_adult": "청년", "middle_age": "중년",
+               "elder": "노년"}.get(str(v.get("age", "")), str(v.get("age") or ""))
+        desc = " / ".join([x for x in [age, ", ".join(str(u) for u in uses[:2])] if x])
+        out.append({"engine": "typecast", "id": vid, "name": str(name or vid),
+                    "gender": "male" if str(v.get("gender", "")).lower().startswith("m") else "female",
+                    "desc": desc or "타입캐스트", "preview": v.get("preview_url") or "",
+                    "korean": bool(isinstance(v.get("voice_name"), dict) and v["voice_name"].get("kor"))})
+    out.sort(key=lambda x: (not x["korean"], x["name"]))
+    store._write(TYPECAST_CACHE, out)
+    return len(out)
+
+
+def typecast_voices(settings: dict) -> list[dict]:
+    if not settings.get("typecast_key"):
+        return []
+    cached = store._read(TYPECAST_CACHE, None)
+    if cached is None:
+        try:
+            typecast_refresh(settings)
+        except Exception:
+            return []
+        cached = store._read(TYPECAST_CACHE, [])
+    return cached
+
+
 def voices(settings: dict) -> list[dict]:
+    typecast = typecast_voices(settings)
     fish = [{"engine": "fish", "id": v.get("id", ""), "name": v.get("name", "Fish 목소리"),
              "gender": v.get("gender", "female"), "desc": "Fish Audio"}
             for v in settings.get("fish_voices", []) if v.get("id")]
-    out = fish + EDGE_VOICES
+    out = typecast + fish + EDGE_VOICES
     if settings.get("gemini_key"):
         out += GEMINI_VOICES
     if sys.platform == "darwin":
@@ -128,6 +207,28 @@ def _fish(text: str, voice: str, speed: float, key: str, model: str, out: Path) 
         raise RuntimeError(f"Fish Audio에 연결하지 못했습니다: {e.reason}")
 
 
+def _typecast(text: str, voice: str, speed: float, pitch: int, emotion: str, intensity: float,
+              settings: dict, out: Path) -> None:
+    key = settings.get("typecast_key", "")
+    if not key:
+        raise RuntimeError("설정에서 타입캐스트 API 키를 넣어 주세요.")
+    model = settings.get("typecast_model") or "ssfm-v30"
+    emotion = emotion or "smart"
+    if model == "ssfm-v21":  # 예전 모델은 감정 4가지만 지원
+        prompt = {"emotion_preset": emotion if emotion in ("normal", "happy", "sad", "angry") else "normal",
+                  "emotion_intensity": max(0.0, min(2.0, intensity))}
+    elif emotion == "smart":
+        prompt = {"emotion_type": "smart"}
+    else:
+        prompt = {"emotion_type": "preset", "emotion_preset": emotion,
+                  "emotion_intensity": max(0.0, min(2.0, intensity))}
+    body = {"voice_id": voice, "text": text, "model": model, "language": "kor", "prompt": prompt,
+            "output": {"audio_format": "mp3", "audio_tempo": max(0.5, min(2.0, round(speed, 2))),
+                       "audio_pitch": max(-12, min(12, int(round(pitch / 2)))), "volume": 100}}
+    with _tc_request("POST", "/v1/text-to-speech", key, body) as r, out.open("wb") as f:
+        shutil.copyfileobj(r, f)
+
+
 def _gemini(text: str, voice: str, speed: float, style_prompt: str, key: str, model: str, out: Path) -> None:
     if not key:
         raise RuntimeError("설정에서 Gemini API 키(무료)를 넣어 주세요.")
@@ -178,14 +279,16 @@ def _say(text: str, voice: str, speed: float, out: Path) -> None:
 
 
 def synthesize(text: str, engine: str, voice: str, speed: float, pitch: int, settings: dict, out: Path,
-               style_prompt: str = "") -> float:
+               style_prompt: str = "", emotion: str = "", intensity: float = 1.0) -> float:
     """text를 음성 파일(mp3)로 만들고 길이(초)를 돌려준다."""
     text = (text or "").strip()
     if not text:
         raise RuntimeError("읽을 대사가 비어 있습니다.")
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".tmp.mp3")
-    if engine == "fish":
+    if engine == "typecast":
+        _typecast(text, voice, speed, pitch, emotion, intensity, settings, tmp)
+    elif engine == "fish":
         _fish(text, voice, speed, settings.get("fish_key", ""), settings.get("fish_model", "s2.1-pro-free"), tmp)
     elif engine == "gemini":
         _gemini(text, voice, speed, style_prompt, settings.get("gemini_key", ""),

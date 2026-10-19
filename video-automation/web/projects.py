@@ -468,7 +468,8 @@ def _voice_of(p: dict, sc: dict) -> dict:
             "voice": v.get("voice") or base.get("voice") or "ko-KR-SunHiNeural",
             "speed": float(style["speed"]) * float(base.get("speed") or 1.0),
             "pitch": int(style["pitch"]) + int(base.get("pitch") or 0),
-            "prompt": style.get("prompt", "")}
+            "prompt": style.get("prompt", ""), "emotion": style.get("emotion", ""),
+            "intensity": float(style.get("intensity", 1.0))}
 
 
 def voice_groups(p: dict) -> list[dict]:
@@ -600,7 +601,8 @@ def synth_missing(p: dict, settings: dict, progress) -> None:
         progress(k / max(1, len(groups)), f"목소리 만드는 중 ({k + 1}/{len(groups)}): {g['text'][:20]}…")
         v = g["voice"]
         dur = tts.synthesize(g["text"], v["engine"], v["voice"], v["speed"], v["pitch"], settings,
-                             d / f"{g['hash']}.mp3", v.get("prompt", ""))
+                             d / f"{g['hash']}.mp3", v.get("prompt", ""), v.get("emotion", ""),
+                             v.get("intensity", 1.0))
         index[g["hash"]] = {"dur": round(dur, 3), "text": g["text"]}
         store._write(d / "index.json", index)
 

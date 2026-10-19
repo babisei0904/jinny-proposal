@@ -67,7 +67,11 @@ def get_settings():
 
 @app.put("/api/settings")
 def put_settings(data: dict):
-    return store.save_settings(data)
+    before = store.get_settings()
+    after = store.save_settings(data)
+    if (before.get("typecast_key"), before.get("typecast_model")) != (after.get("typecast_key"), after.get("typecast_model")):
+        tts.TYPECAST_CACHE.unlink(missing_ok=True)  # 키나 모델이 바뀌면 목소리 목록을 새로 받는다
+    return after
 
 
 @app.get("/api/prompts")
@@ -415,6 +419,15 @@ def voices():
     return {"voices": tts.voices(store.get_settings()), "styles": tts.STYLES}
 
 
+@app.post("/api/typecast/refresh")
+def typecast_refresh():
+    try:
+        n = tts.typecast_refresh(store.get_settings())
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    return {"count": n}
+
+
 @app.post("/api/tts/preview")
 def tts_preview(data: dict):
     settings = store.get_settings()
@@ -430,7 +443,7 @@ def tts_preview(data: dict):
     if not out.exists():
         try:
             tts.synthesize(text, data.get("engine", "edge"), data.get("voice", ""), speed, pitch, settings, out,
-                           style.get("prompt", ""))
+                           style.get("prompt", ""), style.get("emotion", ""), float(style.get("intensity", 1.0)))
         except RuntimeError as e:
             raise HTTPException(400, str(e))
     return {"url": f"/files/tts_preview/{out.name}"}

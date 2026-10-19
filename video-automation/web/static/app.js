@@ -539,6 +539,12 @@ async function viewSettings(v) {
         <label class="f">분석 모델<input type="text" id="gm" value="${esc(st.gemini_model || "gemini-2.5-flash")}"></label></div>
       <label class="f">목소리 모델<input type="text" id="gtm" value="${esc(st.gemini_tts_model || "gemini-2.5-flash-preview-tts")}"></label>
       <div class="hr"></div>
+      <div><b>타입캐스트 API 키</b> <span class="faint">— 숏튜브가 쓰는 AI 성우</span></div>
+      <div class="faint" style="font-size:13px"><a class="link" href="https://typecast.ai/developers/api/" target="_blank">타입캐스트 API 콘솔</a>에서 키를 만들어 넣으세요. 1글자에 1크레딧이고, 무료 플랜은 매달 정해진 크레딧만 쓸 수 있어요. 무료 플랜 음성은 상업적 이용 불가·출처 표기 필요라고 안내돼 있으니 쇼핑숏츠에 쓸 때는 유료 플랜 조건을 확인하세요.</div>
+      <div class="grid g2"><label class="f">API 키<input type="password" id="tk" value="${esc(st.typecast_key || "")}"></label>
+        <label class="f">모델<select id="tm"><option value="ssfm-v30" ${st.typecast_model !== "ssfm-v21" ? "selected" : ""}>ssfm-v30 (최신, 감정 7가지)</option><option value="ssfm-v21" ${st.typecast_model === "ssfm-v21" ? "selected" : ""}>ssfm-v21 (예전 모델)</option></select></label></div>
+      <div class="row"><button class="btn sm" id="tcRefresh">타입캐스트 목소리 목록 새로고침</button><span class="faint" id="tcInfo"></span></div>
+      <div class="hr"></div>
       <div><b>Fish Audio API 키 (무료 모델)</b> <span class="faint">— 내가 만든 목소리 모델을 쓸 때</span></div>
       <div class="faint" style="font-size:13px"><a class="link" href="https://fish.audio/" target="_blank">fish.audio</a> 개발자 메뉴에서 API 키를 만들어 넣으세요. 모델은 무료인 <b>s2.1-pro-free</b>로 둬요.</div>
       <div class="grid g2"><label class="f">API 키<input type="password" id="fk" value="${esc(st.fish_key || "")}"></label>
@@ -577,12 +583,18 @@ async function viewSettings(v) {
     $("#saveS", v).onclick = async () => {
       sync();
       const data = { links: {}, gemini_key: $("#gk", v).value, gemini_model: $("#gm", v).value, gemini_tts_model: $("#gtm", v).value,
+        typecast_key: $("#tk", v).value, typecast_model: $("#tm", v).value,
         fish_key: $("#fk", v).value, fish_model: $("#fm", v).value, fish_voices: fv,
         opening_presets: $("#opP", v).value.split("\n"), outro_presets: $("#otP", v).value.split("\n") };
       v.querySelectorAll("[data-link]").forEach((el) => (data.links[el.dataset.link] = el.value));
       try { S.settings = await api("PUT", "/api/settings", data); toast("저장했어요"); } catch (e) { fail(e); }
     };
     $("#folder", v).onclick = () => api("POST", "/api/reveal", { file: "" }).catch(fail);
+    $("#tcRefresh", v).onclick = async () => {
+      $("#tcInfo", v).textContent = "저장하고 목록을 받는 중…";
+      try { await $("#saveS", v).onclick(); const r = await api("POST", "/api/typecast/refresh"); $("#tcInfo", v).textContent = `목소리 ${r.count}개를 받았어요`; }
+      catch (e) { $("#tcInfo", v).textContent = e.message; }
+    };
   };
   render();
 }

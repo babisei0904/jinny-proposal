@@ -36,6 +36,8 @@ DEFAULT_SETTINGS = {
     "gemini_key": "",
     "gemini_model": "gemini-2.5-flash",
     "gemini_tts_model": "gemini-2.5-flash-preview-tts",
+    "typecast_key": "",
+    "typecast_model": "ssfm-v30",
     "fish_key": "",
     "fish_model": "s2.1-pro-free",
     "fish_voices": [],
@@ -50,7 +52,8 @@ DEFAULT_SETTINGS = {
         "저장해두고 필요할 때 꺼내보세요.",
     ],
 }
-SETTING_KEYS = ["gemini_key", "gemini_model", "gemini_tts_model", "fish_key", "fish_model"]
+SETTING_KEYS = ["gemini_key", "gemini_model", "gemini_tts_model", "typecast_key", "typecast_model",
+                "fish_key", "fish_model"]
 LIST_KEYS = ["opening_presets", "outro_presets"]
 
 _lock = threading.Lock()
