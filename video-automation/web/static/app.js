@@ -9,7 +9,7 @@ const LINK_LABELS = {
   shorttube_subtitle: "숏튜브 자막 제거",
   shorttube_cut: "숏튜브 영상 자르기",
   shorttube_thumbnail: "숏튜브 썸네일 제작",
-  shorttube_compress: "숏튜브 용량 줄이기",
+  compress: "용량 줄이기 (FreeConvert)",
   chatgpt: "ChatGPT",
   gemini: "Gemini",
   flow: "구글 플로우",
@@ -255,7 +255,7 @@ async function viewDashboard(v) {
     ["자막 제거", "중국어 자막 지우기", "숏튜브", "link:shorttube_subtitle"],
     ["영상 자르기", "구간 자르기 · 9:16 크롭", "숏튜브", "link:shorttube_cut"],
     ["썸네일 제작", "장면 캡처 + 문구", "숏튜브", "link:shorttube_thumbnail"],
-    ["용량 줄이기", "업로드용으로 가볍게", "숏튜브", "link:shorttube_compress"],
+    ["용량 줄이기", "업로드용으로 가볍게", "FreeConvert", "link:compress"],
   ];
   const ai = [
     ["대본 만들기", "저장한 대본 프롬프트로", "ChatGPT", "link:chatgpt"],

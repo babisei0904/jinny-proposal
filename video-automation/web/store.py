@@ -25,7 +25,7 @@ DEFAULT_SETTINGS = {
         "shorttube_subtitle": "https://short.agczero.com/",
         "shorttube_cut": "https://short.agczero.com/",
         "shorttube_thumbnail": "https://short.agczero.com/",
-        "shorttube_compress": "https://short.agczero.com/",
+        "compress": "https://www.freeconvert.com/ko/video-compressor",
         "chatgpt": "https://chatgpt.com/",
         "gemini": "https://gemini.google.com/app",
         "flow": "https://labs.google/fx/tools/flow",
