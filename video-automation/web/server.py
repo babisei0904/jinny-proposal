@@ -553,6 +553,33 @@ def thumb_clean(src: str):
         raise HTTPException(400, str(e))
 
 
+class ThumbCapcut(BaseModel):
+    src: str = ""
+    file: str = ""
+    position: str = "start"
+    seconds: float = 0.1
+    name: str = ""
+
+
+@app.post("/api/thumb/capcut")
+def thumb_capcut(req: ThumbCapcut):
+    """올린 영상 + 썸네일을 캡컷으로 ('영상 만들기' 결과는 /api/projects/{pid}/capcut 에 cover를 붙여 보낸다)."""
+    try:
+        video = thumbs.resolve(req.src)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(400, str(e))
+    settings = store.get_settings()
+    cover = {"file": req.file, "position": req.position, "seconds": req.seconds}
+
+    def work(job, progress):
+        result = capcut.export_video(video, req.name, settings, cover, progress)
+        if sys.platform == "darwin":
+            result["opened"] = subprocess.run(["open", "-a", "CapCut"], capture_output=True).returncode == 0
+        job["result"] = result
+
+    return _start("capcut", work)
+
+
 @app.post("/api/thumb/frame")
 def thumb_frame(data: dict):
     try:

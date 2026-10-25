@@ -94,7 +94,8 @@ def _text_parts(cc, L: dict, W: int, H: int) -> dict:
 
 
 def export(p: dict, settings: dict, manifest: dict, frame_dir: Path, progress) -> dict:
-    """manifest: {scenes: [{scene, under, over, texts: {레이어id: 글자}}], textLayers: [레이어]}"""
+    """manifest: {scenes: [{scene, under, over, texts: {레이어id: 글자}}], textLayers: [레이어],
+    cover: {file, position, seconds} (썸네일 제작에서 열 때만)}"""
     try:
         import pycapcut as cc  # 캡컷으로 보낼 때만 필요
     except ImportError:
@@ -125,6 +126,11 @@ def export(p: dict, settings: dict, manifest: dict, frame_dir: Path, progress) -
     starts = [round(x["start"] * US) for x in pl["scenes"]] + [total]  # 끝 = 다음 장면 시작 (반올림으로 겹치지 않게)
     span = {x["id"]: (starts[i], starts[i + 1]) for i, x in enumerate(pl["scenes"])}
     fmap = {f["scene"]: f for f in manifest.get("scenes") or []}
+    cover = _cover(manifest.get("cover"), W, H, assets)
+    off = cover[1] if cover and cover[2] == "start" else 0  # 썸네일을 맨 앞에 넣으면 나머지는 그만큼 뒤로
+
+    def T(a: int, d: int):
+        return cc.Timerange(a + off, d)
 
     # 배경: 배경색 위에 영상 아래 레이어를 합쳐 장면마다 한 장 (주 트랙은 0초부터 빈틈없이)
     bg = ImageColor.getrgb(p["layout"].get("bg") or "#000000")
@@ -151,8 +157,12 @@ def export(p: dict, settings: dict, manifest: dict, frame_dir: Path, progress) -
         return cache[key]
 
     script.add_track(cc.TrackType.video, "배경", relative_index=0)
+    if off:
+        script.add_segment(cc.VideoSegment(cover[0], cc.Timerange(0, off)), "배경")
     for path, a, b in _runs([(picture(fmap.get(x["id"], {}).get("under"), True), *span[x["id"]]) for x in pl["scenes"]]):
-        script.add_segment(cc.VideoSegment(path, cc.Timerange(a, b - a)), "배경")
+        script.add_segment(cc.VideoSegment(path, T(a, b - a)), "배경")
+    if cover and cover[2] == "end":
+        script.add_segment(cc.VideoSegment(cover[0], cc.Timerange(total, cover[1])), "배경")
 
     progress(0.5, "영상 조각 넣는 중")
     vlayer = next((l for l in p["layout"]["layers"] if l.get("type") == "video"), None) or \
@@ -182,7 +192,7 @@ def export(p: dict, settings: dict, manifest: dict, frame_dir: Path, progress) -
             sw, sh, x, y = projects._place(m.width, m.height, bw, bh, clip)
             fit = min(W / m.width, H / m.height)
             cx, cy = bx + x + sw / 2, by + y + sh / 2
-            seg = cc.VideoSegment(m, cc.Timerange(a, b - a), source_timerange=cc.Timerange(s0, s_len), volume=vol,
+            seg = cc.VideoSegment(m, T(a, b - a), source_timerange=cc.Timerange(s0, s_len), volume=vol,
                                   clip_settings=cc.ClipSettings(scale_x=sw / (m.width * fit), scale_y=sh / (m.height * fit),
                                                                 transform_x=(cx - W / 2) / (W / 2),
                                                                 transform_y=(H / 2 - cy) / (H / 2)))
@@ -202,7 +212,7 @@ def export(p: dict, settings: dict, manifest: dict, frame_dir: Path, progress) -
     if over:
         script.add_track(cc.TrackType.video, "레이어", relative_index=2)
         for path, a, b in over:
-            script.add_segment(cc.VideoSegment(path, cc.Timerange(a, b - a)), "레이어")
+            script.add_segment(cc.VideoSegment(path, T(a, b - a)), "레이어")
 
     layers = manifest.get("textLayers") or []
     for k, L in enumerate(reversed(layers)):  # 레이어 목록은 위에 있는 것이 먼저
@@ -214,7 +224,7 @@ def export(p: dict, settings: dict, manifest: dict, frame_dir: Path, progress) -
         script.add_track(cc.TrackType.text, tname, relative_index=k)
         parts = _text_parts(cc, L, W, H)
         for text, a, b in rows:
-            script.add_segment(cc.TextSegment(text, cc.Timerange(a, b - a), **parts), tname)
+            script.add_segment(cc.TextSegment(text, T(a, b - a), **parts), tname)
 
     progress(0.85, "목소리 넣는 중")
     if pl["groups"]:
@@ -226,8 +236,64 @@ def export(p: dict, settings: dict, manifest: dict, frame_dir: Path, progress) -
             a = round(g["start"] * US)
             nxt = round(groups[i + 1]["start"] * US) if i + 1 < len(groups) else total
             dur = max(1000, min(mat.duration, nxt - a, total - a))
-            script.add_segment(cc.AudioSegment(mat, cc.Timerange(a, dur)), "목소리")
+            script.add_segment(cc.AudioSegment(mat, T(a, dur)), "목소리")
 
+    script.save()
+    _finish(root / name, name, root)
+    progress(1.0, "완료")
+    return {"name": name, "folder": str(root / name)}
+
+
+def _cover(c: dict | None, W: int, H: int, assets: Path) -> tuple | None:
+    """썸네일 제작에서 만든 썸네일 → (화면 크기에 맞춘 그림 경로, 길이(us), 'start'|'end')."""
+    if not c or not c.get("file"):
+        return None
+    from . import thumbs
+
+    name = Path(str(c["file"])).name
+    src = thumbs.THUMBS / name
+    if not src.exists() or src.suffix.lower() != ".png":
+        raise RuntimeError("썸네일 파일을 찾을 수 없어요. 썸네일을 다시 저장해 주세요.")
+    out = assets / f"thumbnail_{name}"
+    # 비율이 달라도 문구가 잘리지 않게 전체를 맞추고 남는 곳은 검게 (MP4 합성과 같은 방식)
+    with Image.open(src) as im:
+        im = im.convert("RGB")
+        k = min(W / im.width, H / im.height)
+        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+        canvas = Image.new("RGB", (W, H), (0, 0, 0))
+        canvas.paste(im, ((W - im.width) // 2, (H - im.height) // 2))
+        canvas.save(out)
+    d = max(0.04, min(3.0, _num(c.get("seconds"), 0.1)))
+    return str(out), round(d * US), "end" if c.get("position") == "end" else "start"
+
+
+def export_video(video: Path, title: str, settings: dict, cover: dict | None, progress) -> dict:
+    """올린 영상(작업실에서 만들지 않은 영상) + 썸네일을 캡컷 프로젝트로."""
+    try:
+        import pycapcut as cc
+    except ImportError:
+        raise RuntimeError("pycapcut이 설치되어 있지 않아요. 터미널에서 pip install -r requirements.txt 를 실행해 주세요.")
+    info = media.probe(video)
+    W, H = int(info["width"] or 1080) // 2 * 2, int(info["height"] or 1920) // 2 * 2
+    root = draft_root(settings)
+    safe = re.sub(r"[\\/:*?\"<>|]+", "_", title or "영상").strip(" ._")[:40] or "영상"
+    name = f"{safe} {time.strftime('%m%d_%H%M%S')}"
+    progress(0.3, "캡컷 프로젝트 만드는 중")
+    script = cc.DraftFolder(str(root)).create_draft(name, W, H, 30)
+    assets = root / name / "영상작업실"
+    assets.mkdir()
+    dst = assets / video.name
+    shutil.copy2(video, dst)
+    m = cc.VideoMaterial(str(dst), material_name=title or video.name)
+    m.width, m.height = W, H
+    cv = _cover(cover, W, H, assets)
+    off = cv[1] if cv and cv[2] == "start" else 0
+    script.add_track(cc.TrackType.video)
+    if off:
+        script.add_segment(cc.VideoSegment(cv[0], cc.Timerange(0, off)))
+    script.add_segment(cc.VideoSegment(m, cc.Timerange(off, m.duration)))
+    if cv and cv[2] == "end":
+        script.add_segment(cc.VideoSegment(cv[0], cc.Timerange(off + m.duration, cv[1])))
     script.save()
     _finish(root / name, name, root)
     progress(1.0, "완료")

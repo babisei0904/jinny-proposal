@@ -395,10 +395,21 @@ function thStep4(body, v) {
       <div class="row"><button class="btn ghost sm" id="pv">미리보기</button><a class="btn primary" href="${r.mp4}" download="${esc(r.mp4_file || "thumbnail.mp4")}">⬇ 영상 다운로드 (MP4)</a></div></div>
     <video src="${r.mp4}" controls playsinline id="pvV" hidden class="th-mp4v"></video>
   </div>` : ""}
+  <div class="card mk-card stack" style="margin-top:14px;gap:8px">
+    <span class="badge brand" style="align-self:start">캡컷에서 이어서 편집</span>
+    <b>✂️ 썸네일을 넣은 영상을 캡컷으로 열기</b>
+    <span class="faint">${s.src.startsWith("proj:") ? "영상 만들기의 장면·자막·목소리를 따로따로 고칠 수 있는 캡컷 프로젝트로 열고," : "이 영상을 캡컷 프로젝트로 열고,"} 썸네일을 영상 ${s.position === "end" ? "맨 뒤" : "맨 앞"}에 ${s.seconds}초 넣어요.</span>
+    <div class="row"><button class="btn primary" id="toCapcutTh">✂️ 캡컷으로 열기</button></div>
+  </div>
   <div class="row" style="justify-content:center;margin-top:16px"><button class="btn ghost" id="again">↻ 다른 장면 캡처하기</button><button class="btn ghost" id="restart">새로운 영상으로 처음부터 만들기</button></div>`;
   body.querySelectorAll("[data-rv]").forEach((b) => (b.onclick = () => api("POST", "/api/reveal", { file: b.dataset.rv, project: "thumbs" }).catch(fail)));
   $("#pv")?.addEventListener("click", () => { $("#pvV").hidden = !$("#pvV").hidden; });
   $("#again").onclick = () => { s.step = 2; thRender(v); };
+  $("#toCapcutTh").onclick = () => {
+    const cover = { file: r.png_file, position: s.position || "start", seconds: +s.seconds || 0.1 };
+    if (s.src.startsWith("proj:")) exportCapcut({ pid: s.src.split(":")[1], cover });
+    else exportCapcut({ src: s.src, name: s.srcName, cover });
+  };
   $("#restart").onclick = () => { TH.st = thDefault(); thRender(v); };
 }
 document.fonts?.addEventListener?.("loadingdone", () => TH.redraw?.());

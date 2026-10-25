@@ -1239,21 +1239,26 @@ function step5(body) {
     usePrompt(pr, { open: true, preset: { "대본": script } });
   };
   $("#srtDl5")?.addEventListener("click", downloadSrt);
-  $("#toCapcut5")?.addEventListener("click", exportCapcut);
+  $("#toCapcut5")?.addEventListener("click", () => exportCapcut());
   $("#reveal")?.addEventListener("click", () => api("POST", "/api/reveal", { file: r.file, project: p.id }).catch(fail));
   $("#doRender").onclick = () => doRender(body);
   $("#fPrev").onclick = () => goStep(4);
   $("#fNext").onclick = () => (location.hash = "#/");
 }
 /* ---------------------------------------------------------------- 캡컷으로 내보내기 */
-async function exportCapcut() {
-  const p = MK.p;
+/** opts: 썸네일 제작에서 열 때 { pid | src, name, cover: {file, position, seconds} } */
+async function exportCapcut(opts = {}) {
+  let p = opts.pid || opts.src ? null : MK.p;
   let box;
   const close = modal(`<h3>✂️ 캡컷으로 열기</h3><div id="ccBox"></div>`, (m) => (box = $("#ccBox", m)));
   const show = (msg, f) => (box.innerHTML = `<div class="stack"><div class="row between"><b>${esc(msg)}</b><span class="faint">${Math.round(f * 100)}%</span></div><div class="bar"><i style="width:${Math.max(3, f * 100)}%"></i></div></div>`);
   try {
-    show("장면 그림을 그리는 중", 0.01);
-    await mkSave(true);
+    show(opts.src ? "캡컷 프로젝트 만드는 중" : "장면 그림을 그리는 중", 0.01);
+    if (opts.src) { // 작업실에서 만들지 않은 영상: 영상 + 썸네일만
+      const job = await api("POST", "/api/thumb/capcut", { src: opts.src, name: opts.name || "", ...opts.cover });
+      return ccDone(box, close, (await waitJob(job.id, (j) => show(j.message, j.progress))).result, opts);
+    }
+    if (p) await mkSave(true); else p = await api("GET", `/api/projects/${opts.pid}`);
     await ensureFonts(p); await ensureImages(p);
     const cv = document.createElement("canvas"); cv.width = CW; cv.height = CH;
     const ctx = cv.getContext("2d");
@@ -1272,19 +1277,22 @@ async function exportCapcut() {
       scenes.push(item);
       show(`장면 그림을 그리는 중 (${i + 1}/${p.scenes.length})`, 0.01 + (i / p.scenes.length) * 0.09);
     }
-    fd.append("manifest", JSON.stringify({ scenes, textLayers }));
+    fd.append("manifest", JSON.stringify({ scenes, textLayers, cover: opts.cover || null }));
     const job = await api("POST", `/api/projects/${p.id}/capcut`, fd);
     const done = await waitJob(job.id, (j) => show(j.message, 0.1 + j.progress * 0.9));
-    const r = done.result;
-    box.innerHTML = `<div class="stack"><div class="notice"><b>✅ 캡컷 프로젝트를 만들었어요: ${esc(r.name)}</b></div>
-      <p>캡컷 첫 화면의 프로젝트 목록에서 <b>${esc(r.name)}</b>을 열어 주세요.${r.opened ? " 캡컷을 열어 두었어요." : ""}</p>
-      <p class="faint" style="font-size:13px">목록에 안 보이면 캡컷을 완전히 끄고(⌘Q) 다시 열어 주세요.<br>자막은 캡컷에서 바로 고칠 수 있는 글자로 들어가요. 크기·테두리는 비슷하게 맞춘 값이라 캡컷에서 한 번에 다듬어 주세요.</p>
-      <div class="row" style="justify-content:flex-end"><button class="btn primary" data-close>확인</button></div></div>`;
-    box.querySelector("[data-close]").onclick = close;
+    ccDone(box, close, done.result, opts);
   } catch (e) {
     box.innerHTML = `<div class="notice bad"><b>캡컷으로 내보내지 못했어요.</b><br>${e.message === "Not Found" ? "서버가 예전 버전으로 켜져 있어요. 터미널에서 Ctrl+C로 서버를 끄고 python -m web.server 로 다시 켠 뒤 새로고침해 주세요." : esc(e.message)}</div><div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="ccX">닫기</button></div>`;
     $("#ccX").onclick = close;
   }
+}
+
+function ccDone(box, close, r, opts) {
+  box.innerHTML = `<div class="stack"><div class="notice"><b>✅ 캡컷 프로젝트를 만들었어요: ${esc(r.name)}</b></div>
+    <p>캡컷 첫 화면의 프로젝트 목록에서 <b>${esc(r.name)}</b>을 열어 주세요.${r.opened ? " 캡컷을 열어 두었어요." : ""}</p>
+    <p class="faint" style="font-size:13px">목록에 안 보이면 캡컷을 완전히 끄고(⌘Q) 다시 열어 주세요.${opts.cover ? `<br>썸네일은 영상 ${opts.cover.position === "end" ? "맨 뒤" : "맨 앞"}에 ${opts.cover.seconds}초 들어가 있어요.` : ""}${opts.src ? "" : "<br>자막은 캡컷에서 바로 고칠 수 있는 글자로 들어가요. 크기·테두리는 비슷하게 맞춘 값이라 캡컷에서 한 번에 다듬어 주세요."}</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn primary" data-close>확인</button></div></div>`;
+  box.querySelector("[data-close]").onclick = close;
 }
 
 async function doRender(body) {
