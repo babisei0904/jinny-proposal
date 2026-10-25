@@ -1278,7 +1278,7 @@ async function exportCapcut() {
       <div class="row" style="justify-content:flex-end"><button class="btn primary" data-close>확인</button></div></div>`;
     box.querySelector("[data-close]").onclick = close;
   } catch (e) {
-    box.innerHTML = `<div class="notice bad"><b>캡컷으로 내보내지 못했어요.</b><br>${esc(e.message)}</div><div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="ccX">닫기</button></div>`;
+    box.innerHTML = `<div class="notice bad"><b>캡컷으로 내보내지 못했어요.</b><br>${e.message === "Not Found" ? "서버가 예전 버전으로 켜져 있어요. 터미널에서 Ctrl+C로 서버를 끄고 python -m web.server 로 다시 켠 뒤 새로고침해 주세요." : esc(e.message)}</div><div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="ccX">닫기</button></div>`;
     $("#ccX").onclick = close;
   }
 }
