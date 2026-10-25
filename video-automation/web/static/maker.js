@@ -498,7 +498,7 @@ function ttsBox(p) {
     <span class="mk-label" style="margin:0">TTS 스타일 & 프롬프트 프리셋</span>
     <select id="ttsStyle">${MK.styles.map((s) => `<option value="${s.id}" ${t.style === s.id ? "selected" : ""}>🎭 ${esc(s.name)}</option>`).join("")}</select>
     <div class="row faint" style="font-size:12.5px;gap:14px">
-      <label class="row" style="gap:6px">속도 <input type="range" id="ttsSpeed" min="0.8" max="1.3" step="0.05" value="${t.speed || 1}" style="width:110px"> <span id="ttsSpeedL">${(+t.speed || 1).toFixed(2)}x</span></label>
+      <label class="row" style="gap:6px">속도 <input type="range" id="ttsSpeed" min="0.7" max="1.5" step="0.05" value="${t.speed || 1}" style="width:110px"> <span id="ttsSpeedL">${(+t.speed || 1).toFixed(2)}x</span></label>
       <span>${t.engine === "gemini" ? "Gemini는 스타일 문장(말투 지시)이 그대로 반영돼요" : t.engine === "edge" ? "Edge는 스타일의 속도·톤만 반영돼요" : t.engine === "typecast" ? "타입캐스트는 스타일의 감정(기쁨·차분함·속삭임 등)과 속도가 반영돼요. 1글자 = 1크레딧" : ""}</span></div>
   </div>`;
 }
@@ -511,7 +511,11 @@ function bindTtsBox(root, rerender) {
   $("#ttsPrev", root).onclick = async (e) => {
     const b = e.target;
     const vv = MK.voices.find((x) => x.engine === p.tts.engine && x.id === p.tts.voice);
-    if (vv?.preview) { MK.audio?.pause(); MK.audio = new Audio(vv.preview); MK.audio.play(); toast("타입캐스트 샘플 음성이에요 (크레딧 안 씀)"); return; }
+    if (vv?.preview) { // 샘플 음성은 고정이라, 고른 빠르기만큼 재생 속도를 바꿔 들려준다
+      const st = MK.styles.find((x) => x.id === p.tts.style);
+      MK.audio?.pause(); MK.audio = new Audio(vv.preview); MK.audio.playbackRate = (+st?.speed || 1) * (+p.tts.speed || 1); MK.audio.play();
+      toast("타입캐스트 샘플 음성이에요 (크레딧 안 씀). 빠르기는 재생 속도로 들려드려요"); return;
+    }
     b.disabled = true; b.textContent = "만드는 중…";
     try {
       const r = await api("POST", "/api/tts/preview", { engine: p.tts.engine, voice: p.tts.voice, style: p.tts.style, speed: p.tts.speed, text: p.scenes.slice(0, 4).map((s) => s.text).join(" ") || undefined });
@@ -1122,8 +1126,10 @@ async function step4(body) {
       <div class="card tight stack">
         <b>🎚 전체 설정</b>
         <label class="f">원본 영상 소리 <span class="faint">(${p.origVolume || 0}%, 0이면 목소리만)</span><input type="range" id="origVol" min="0" max="100" step="5" value="${p.origVolume || 0}"></label>
+        <label class="f">🔊 목소리 빠르기 <span class="faint" id="vSpeedL">(${(+p.tts.speed || 1).toFixed(2)}배 · 바꾼 뒤 위의 [목소리 재합성 및 동기화]를 누르면 적용돼요)</span>
+          <input type="range" id="vSpeed" min="0.7" max="1.5" step="0.05" value="${+p.tts.speed || 1}"></label>
         <span class="mk-label" style="margin:0">영상 길이 맞추기 (목소리가 영상보다 길거나 짧을 때)</span>
-        <div class="seg"><button data-fitv="stretch" class="${p.fitVideo !== "loop" ? "on" : ""}">속도 조절 (0.5~2배)</button><button data-fitv="loop" class="${p.fitVideo === "loop" ? "on" : ""}">원래 속도로 반복</button></div>
+        <div class="seg"><button data-fitv="stretch" class="${p.fitVideo !== "loop" ? "on" : ""}">영상 속도 조절 (0.5~2배)</button><button data-fitv="loop" class="${p.fitVideo === "loop" ? "on" : ""}">원래 속도로 반복</button></div>
       </div>
     </div>
   </div>
@@ -1185,6 +1191,11 @@ async function step4(body) {
   $("#pvBar").onclick = (e) => { const r = $("#pvBar").getBoundingClientRect(); const t = ((e.clientX - r.left) / r.width) * plan.total; player.stop(); const i = player.sceneAt(t); markSel(i); player.showAt(t); };
   $("#origVol").oninput = (e) => { p.origVolume = +e.target.value; e.target.previousElementSibling.textContent = `(${p.origVolume}%, 0이면 목소리만)`; touch(); };
   body.querySelectorAll("[data-fitv]").forEach((b) => (b.onclick = () => { p.fitVideo = b.dataset.fitv; touch(); step4(body); }));
+  $("#vSpeed").oninput = (e) => { $("#vSpeedL").textContent = `(${(+e.target.value).toFixed(2)}배 · 손을 떼면 바뀐 문장 수를 보여줘요)`; };
+  $("#vSpeed").onchange = async (e) => { // 빠르기가 바뀌면 모든 문장의 목소리를 다시 만들어야 한다
+    p.tts.speed = +e.target.value; player.stop(); await mkSave(true); step4(body);
+    toast("목소리 빠르기를 바꿨어요. [목소리 재합성 및 동기화]를 누르면 적용돼요");
+  };
   $("#reVoice").onclick = async () => {
     player.stop();
     await mkSave(true);
