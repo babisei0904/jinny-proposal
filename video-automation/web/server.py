@@ -628,7 +628,7 @@ def reveal(req: Reveal):
 @app.get("/api/health")
 def health():
     return {"ffmpeg": bool(shutil.which("ffmpeg")), "outputs": str(store.OUTPUTS),
-            "platform": sys.platform}
+            "platform": sys.platform, "features": ["capcut"]}
 
 
 # ---------------------------------------------------------------- 정적 파일
@@ -647,10 +647,49 @@ def index():
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})
 
 
+def _port_busy() -> bool:
+    import socket
+
+    with socket.socket() as sk:
+        sk.settimeout(0.5)
+        return sk.connect_ex((HOST, PORT)) == 0
+
+
+def _stop_old_server() -> bool:
+    """같은 포트에 예전 영상 작업실이 켜져 있으면 끈다. 다른 프로그램이면 건드리지 않는다."""
+    import signal
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://{HOST}:{PORT}/api/health", timeout=2) as r:
+            ours = "outputs" in json.loads(r.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        ours = False
+    if not ours:
+        return False
+    r = subprocess.run(["lsof", "-ti", f"tcp:{PORT}", "-sTCP:LISTEN"], capture_output=True, text=True)
+    for pid in {int(x) for x in r.stdout.split() if x.isdigit()} - {os.getpid()}:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    for _ in range(25):
+        if not _port_busy():
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def main():
     import uvicorn
 
     url = f"http://{HOST}:{PORT}"
+    if _port_busy():
+        print("\n  예전에 켠 영상 작업실이 아직 켜져 있어서 끄고 새로 켤게요…")
+        if not _stop_old_server():
+            print(f"\n  {PORT}번 포트를 다른 프로그램이 쓰고 있어서 켤 수 없어요.\n"
+                  f"  터미널에서  kill $(lsof -ti tcp:{PORT})  를 실행한 뒤 다시 켜 주세요.\n")
+            sys.exit(1)
     print(f"\n  영상 작업실이 켜졌어요 →  {url}\n  끄려면 이 창에서 Ctrl+C\n")
     if os.environ.get("NO_BROWSER") != "1":
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
