@@ -10,10 +10,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
+import sys
 import time
+import uuid
 from pathlib import Path
 
 from PIL import Image, ImageColor
@@ -226,5 +229,44 @@ def export(p: dict, settings: dict, manifest: dict, frame_dir: Path, progress) -
             script.add_segment(cc.AudioSegment(mat, cc.Timerange(a, dur)), "목소리")
 
     script.save()
+    _finish(root / name, name, root)
     progress(1.0, "완료")
     return {"name": name, "folder": str(root / name)}
+
+
+def _finish(folder: Path, name: str, root: Path) -> None:
+    """pycapcut 기본 틀은 모든 드래프트가 같은 id를 쓰고 윈도우용이라, 맥 캡컷이 목록에만 보이고 열지 못한다.
+    드래프트마다 새 id를 주고, 맥 캡컷이 읽는 draft_info.json과 목록 정보(길이·재료)를 채운다."""
+    now = int(time.time())
+    content_path = folder / "draft_content.json"
+    c = json.loads(content_path.read_text(encoding="utf-8"))
+    c["id"] = str(uuid.uuid4()).upper()
+    c["name"] = name
+    c["create_time"] = c["update_time"] = now
+    if sys.platform == "darwin":
+        for k in ("platform", "last_modified_platform"):
+            c.setdefault(k, {})["os"] = "mac"
+    text = json.dumps(c, ensure_ascii=False, indent=4)
+    content_path.write_text(text, encoding="utf-8")
+    (folder / "draft_info.json").write_text(text, encoding="utf-8")  # 맥 캡컷은 이 파일을 읽는다
+
+    us = now * 1_000_000
+    mats = []
+    for kind, items in (("video", c["materials"].get("videos", [])), ("music", c["materials"].get("audios", []))):
+        for m in items:
+            mats.append({"create_time": now, "duration": m.get("duration", 0), "extra_info": Path(m["path"]).name,
+                         "file_Path": m["path"], "height": m.get("height", 0), "id": str(uuid.uuid4()).upper(),
+                         "import_time": now, "import_time_ms": us, "item_source": 1, "md5": "",
+                         "metetype": "photo" if m.get("type") == "photo" else kind,
+                         "roughcut_time_range": {"duration": m.get("duration", 0), "start": 0},
+                         "sub_time_range": {"duration": -1, "start": -1}, "type": 0, "width": m.get("width", 0)})
+    meta_path = folder / "draft_meta_info.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta.update({"draft_id": str(uuid.uuid4()).upper(), "draft_name": name, "draft_fold_path": str(folder),
+                 "draft_root_path": str(root), "tm_duration": c.get("duration", 0),
+                 "tm_draft_create": us, "tm_draft_modified": us, "draft_new_version": c.get("new_version", ""),
+                 "draft_timeline_materials_size_": sum(p.stat().st_size for p in folder.rglob("*") if p.is_file())})
+    for group in meta.get("draft_materials", []):
+        if group.get("type") == 0:
+            group["value"] = mats
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
