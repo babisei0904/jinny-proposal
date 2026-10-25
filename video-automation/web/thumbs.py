@@ -1,11 +1,14 @@
 """썸네일 제작: 장면 캡처, PNG 저장, 썸네일을 영상 맨 앞/뒤에 넣은 MP4 만들기."""
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import time
 import uuid
 from pathlib import Path
+
+from PIL import Image, ImageColor
 
 from . import media, projects, store
 
@@ -46,16 +49,70 @@ def sources() -> list[dict]:
     return out
 
 
-def frame(src: str, t: float) -> dict:
+def frame(src: str, t: float, clean: bool = False) -> dict:
+    """미리보기에서 멈춘 바로 그 시각의 장면을 캡처한다.
+    clean=True 이고 '영상 만들기' 결과면 자막·문구 없이 원본 클립에서 같은 순간을 꺼낸다."""
     video = resolve(src)
     info = media.probe(video)
     t = max(0.0, min(float(t), max(0.0, info["duration"] - 0.05)))
     out = THUMBS / f"frame_{uuid.uuid4().hex[:10]}.png"
+    note = ""
+    if clean and src.startswith("proj:"):
+        try:
+            res = _clean_frame(src, video, info, t, out)
+            if res:
+                return res
+            note = "이 영상은 만든 뒤에 내용이 바뀌어 원본 장면을 정확히 찾을 수 없어 보이는 그대로 캡처했어요."
+        except Exception:  # noqa: BLE001 - 원본을 못 쓰면 완성 영상에서 그대로 캡처
+            note = "원본 클립을 찾을 수 없어 보이는 그대로 캡처했어요."
     r = subprocess.run([media.ffmpeg_bin(), "-y", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video),
                         "-frames:v", "1", str(out)], capture_output=True, text=True)
     if r.returncode != 0 or not out.exists():
         raise RuntimeError("장면을 캡처하지 못했습니다.")
-    return {"url": f"/files/thumbs/{out.name}", "width": info["width"], "height": info["height"], "t": round(t, 2)}
+    return {"url": f"/files/thumbs/{out.name}", "width": info["width"], "height": info["height"], "t": round(t, 2),
+            "clean": False, "note": note}
+
+
+def _scene_map(src: str, video: Path, info: dict) -> dict | None:
+    """렌더링 때 남긴 시간표. 예전 영상은 지금 프로젝트로 다시 계산하되, 길이가 같을 때만 믿는다."""
+    side = video.with_suffix(".json")
+    if side.exists():
+        return json.loads(side.read_text())
+    pid = src.split(":", 2)[1]
+    m = projects.scene_map(projects.load(pid))
+    return m if abs(m["total"] - info["duration"]) < 0.15 else None
+
+
+def _clean_frame(src: str, video: Path, info: dict, t: float, out: Path) -> dict | None:
+    m = _scene_map(src, video, info)
+    if not m or not m["visible"] or not m["pieces"]:
+        return None
+    pc = next((x for x in m["pieces"] if x["start"] <= t < x["start"] + x["dur"]), m["pieces"][-1])
+    clip = store.UPLOADS / pc["id"]
+    if not clip.exists():
+        return None
+    cinfo = media.probe(clip)
+    at = pc["src"] + max(0.0, min(t - pc["start"], pc["dur"])) * pc["speed"]
+    at = max(0.0, min(at, max(0.0, cinfo["duration"] - 0.05)))
+    W, H = int(m["w"]), int(m["h"])
+    b = m["box"]
+    bw, bh = max(2, int(b["w"]) // 2 * 2), max(2, int(b["h"]) // 2 * 2)
+    sw, sh, x, y = projects._place(cinfo["width"] or 1080, cinfo["height"] or 1920, bw, bh, pc)
+    raw = out.with_name(out.stem + "_src.png")
+    r = subprocess.run([media.ffmpeg_bin(), "-y", "-v", "error", "-ss", f"{at:.3f}", "-i", str(clip),
+                        "-frames:v", "1", str(raw)], capture_output=True, text=True)
+    if r.returncode != 0 or not raw.exists():
+        return None
+    # 렌더링과 똑같이: 상자(검정) 안에 영상을 맞춰 넣고, 그 상자를 배경색 화면의 제자리에 놓는다
+    with Image.open(raw) as im:
+        fg = im.convert("RGB").resize((sw, sh), Image.LANCZOS)
+    raw.unlink(missing_ok=True)
+    boxed = Image.new("RGB", (bw, bh), (0, 0, 0))
+    boxed.paste(fg, (x, y))
+    canvas = Image.new("RGB", (W, H), ImageColor.getrgb(m.get("bg") or "#000000"))
+    canvas.paste(boxed, (int(b["x"]), int(b["y"])))
+    canvas.save(out)
+    return {"url": f"/files/thumbs/{out.name}", "width": W, "height": H, "t": round(t, 2), "clean": True, "note": ""}
 
 
 def with_cover(src: str, png: Path, position: str, seconds: float, out: Path) -> float:

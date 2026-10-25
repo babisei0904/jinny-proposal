@@ -755,4 +755,22 @@ def render(p: dict, settings: dict, frames: list[dict], frame_dir: Path, progres
     if r.returncode != 0:
         raise RuntimeError(f"최종 영상 만들기 실패: {r.stderr[-400:]}")
     shutil.rmtree(work, ignore_errors=True)
+    # 썸네일 제작에서 '자막 없는 원본 장면'을 정확히 찾도록, 이 영상의 시간표를 같이 남긴다
+    final.with_suffix(".json").write_text(json.dumps(scene_map(p, pl), ensure_ascii=False))
     return final
+
+
+def scene_map(p: dict, pl: dict | None = None) -> dict:
+    """완성 영상의 몇 초가 어느 원본 클립의 몇 초인지 (렌더링과 같은 계산)."""
+    pl = pl or plan(p)
+    vlayer = next((l for l in p["layout"]["layers"] if l.get("type") == "video"), None) or \
+        {"x": 0, "y": 0, "w": W, "h": H, "visible": True}
+    pieces = []
+    for pc in pl["pieces"]:
+        clip = p["clips"][pc["clip"]]
+        pieces.append({"start": pc["start"], "dur": pc["dur"], "src": pc["src"], "speed": pc["speed"],
+                       "id": clip["id"], "fit": clip.get("fit", "cover"), "zoom": clip.get("zoom", 1),
+                       "ox": clip.get("ox", 0), "oy": clip.get("oy", 0)})
+    return {"total": pl["total"], "w": W, "h": H, "bg": p["layout"].get("bg") or "#000000",
+            "box": {k: vlayer.get(k) for k in ("x", "y", "w", "h")}, "visible": vlayer.get("visible", True),
+            "pieces": pieces}

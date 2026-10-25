@@ -70,7 +70,7 @@ async function thStep1(body, v) {
 /* ---------- 2단계: 장면 캡처 */
 function thStep2(body, v) {
   const s = TH.st;
-  body.innerHTML = `<div class="row between"><div><h2 class="mk-h">2단계: 썸네일로 활용할 명장면 캡처</h2><p class="muted mk-sub">미리보기를 탐색하여 시선을 사로잡는 프레임을 선택 후 캡처하세요.</p></div><button class="btn ghost" id="reSrc">영상 다시 선택</button></div>
+  body.innerHTML = `<div class="row between"><div><h2 class="mk-h">2단계: 썸네일로 활용할 명장면 캡처</h2><p class="muted mk-sub">미리보기에서 장면을 멈추고 캡처하세요. 영상 만들기 결과는 같은 순간을 자막·문구 없는 원본으로 캡처할 수 있어요.</p></div><button class="btn ghost" id="reSrc">영상 다시 선택</button></div>
   <div class="th-grid">
     <div class="th-dark stack" style="align-items:center">
       <div class="th-vwrap" id="thVW"><video id="thV" src="${s.srcUrl}" playsinline preload="auto" class="th-video"></video><div class="th-cropbox" id="thBox"></div></div>
@@ -80,6 +80,7 @@ function thStep2(body, v) {
     <div class="stack">
       <div class="card tight stack"><b>▣ 썸네일 출력 비율 프리셋</b>
         <div class="grid g2">${Object.entries(TH_RATIOS).map(([k, r]) => `<button class="ratio-btn ${s.ratio === k ? "on" : ""}" data-r="${k}"><b>${r[2]}</b><span>${r[3]}</span></button>`).join("")}</div>
+        ${s.src.startsWith("proj:") ? `<div class="seg2"><button data-c="1" class="${s.clean !== false ? "on" : ""}">자막 없이 (원본 장면)</button><button data-c="0" class="${s.clean === false ? "on" : ""}">보이는 그대로</button></div>` : ""}
         <button class="btn big th-cta" id="cap">📸 현재 장면 캡처하기</button></div>
       <div class="card tight stack" id="snap" ${s.bg ? "" : "hidden"}><div class="row between"><b>✓ 캡처 완료된 스냅샷</b><span class="badge ok">완료</span></div>
         <div class="th-snap"><img id="snapImg" src="${s.bg?.url || ""}" alt=""></div>
@@ -103,14 +104,15 @@ function thStep2(body, v) {
   body.querySelectorAll("[data-d]").forEach((b) => (b.onclick = () => { vid.pause(); vid.currentTime = Math.max(0, Math.min(vid.duration || 1e9, vid.currentTime + +b.dataset.d)); }));
   $("#thPlay").onclick = () => (vid.paused ? vid.play() : vid.pause());
   body.querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => { s.ratio = b.dataset.r; thSave(); body.querySelectorAll("[data-r]").forEach((x) => x.classList.toggle("on", x === b)); box(); }));
+  body.querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => { s.clean = b.dataset.c === "1"; thSave(); body.querySelectorAll("[data-c]").forEach((x) => x.classList.toggle("on", x === b)); }));
   $("#reSrc").onclick = () => { s.step = 1; thRender(v); };
   $("#cap").onclick = async (e) => {
     e.target.disabled = true; e.target.textContent = "캡처하는 중…"; vid.pause();
     try {
-      const r = await api("POST", "/api/thumb/frame", { src: s.src, t: vid.currentTime || s.t || 0 });
+      const r = await api("POST", "/api/thumb/frame", { src: s.src, t: vid.currentTime, clean: s.src.startsWith("proj:") && s.clean !== false });
       s.t = r.t; s.bg = r; s.view = { zoom: 1, ox: 0, oy: 0 }; thSave();
       $("#snapImg").src = r.url; $("#snap").hidden = false; TH.img = null;
-      toast("장면을 캡처했어요");
+      toast(r.note || `${r.t.toFixed(2)}s 장면을 캡처했어요`);
     } catch (err) { fail(err); }
     e.target.disabled = false; e.target.textContent = "📸 현재 장면 캡처하기";
   };
