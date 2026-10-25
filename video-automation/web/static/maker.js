@@ -763,7 +763,7 @@ function step2Scenes(body) {
   body.innerHTML = `<div class="card mk-card">
     <div class="row between"><div><h2 class="mk-h">장면별 각색 대본 및 문장 분할</h2>
       <p class="muted mk-sub">동영상에서 인식된 장면 단위의 문장 구조입니다. 쇼츠 대본 텍스트를 편집해 주세요.</p></div>
-      <div class="row"><button class="btn" id="reAI">✨ AI 대본 재각색</button><button class="btn" id="addScene">+ 장면 추가</button></div></div>
+      <div class="row"><button class="btn" id="srtDl">⬇ 자막 SRT</button><button class="btn" id="reAI">✨ AI 대본 재각색</button><button class="btn" id="addScene">+ 장면 추가</button></div></div>
     <div class="row" style="margin:6px 0 14px"><span class="mk-label" style="margin:0">영상 제목</span><input type="text" id="ptitle" value="${esc(p.title)}" placeholder="제목 (레이어의 {제목} 자리에 들어가요)" style="max-width:420px"></div>
     ${groups.map((g, gi) => { const c = p.clips[g.clip] || {}; return `
     <div class="card clip-group">
@@ -779,6 +779,7 @@ function step2Scenes(body) {
   </div>`;
   groups.forEach((g, gi) => bindClipPreview("cg" + gi, g.clip, { scene: p.scenes[g.items[0]], label: `클립 #${g.clip + 1} (${(+p.clips[g.clip]?.in || 0).toFixed(1)}s-${(+p.clips[g.clip]?.out || 0).toFixed(1)}s)` }));
   $("#ptitle").oninput = (e) => { p.title = e.target.value; touch(); };
+  $("#srtDl").onclick = downloadSrt;
   $("#reAI").onclick = () => { p.script.view = "settings"; touch(); step2(body); };
   const addAfter = (i, clip) => { p.scenes.splice(i + 1, 0, { id: Math.random().toString(16).slice(2, 10), clip, text: "", original: "", voice: null, extra: {}, hide: [] }); touch(); step2Scenes(body); };
   $("#addScene").onclick = () => addAfter(p.scenes.length - 1, p.scenes.length ? p.scenes[p.scenes.length - 1].clip : 0);
@@ -793,6 +794,18 @@ function step2Scenes(body) {
       <div class="row" style="justify-content:flex-end"><button class="btn" data-close>취소</button><button class="btn primary dark" id="okVoice">확인</button></div>`,
     (m, close) => { $("#okVoice", m).onclick = () => { close(); p.maxStep = Math.max(p.maxStep, 3); runVoiceJob(body, () => goStep(3)); }; });
   };
+}
+async function downloadSrt() {
+  const p = MK.p;
+  await mkSave(true);
+  const r = await api("GET", `/api/projects/${p.id}/srt`).catch(fail);
+  if (!r) return;
+  if (!r.count) return toast("자막이 없어요. 먼저 장면 대사를 입력해 주세요");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + r.srt], { type: "application/x-subrip;charset=utf-8" }));
+  a.download = `${(p.title || p.name || "자막").replace(/[\\/:*?"<>|]+/g, "_").trim() || "자막"}.srt`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(r.missing ? `자막 ${r.count}개를 받았어요. 아직 목소리를 안 만든 문장은 예상 시간으로 넣었어요` : `자막 ${r.count}개를 SRT로 받았어요`);
 }
 function sceneCard(s, i) {
   const p = MK.p, n = p.scenes.length;
@@ -1200,7 +1213,7 @@ function step5(body) {
       <div class="stack">
         <div id="rJob"></div>
         <button class="btn primary big" id="doRender">${r ? "↻ 다시 만들기 (수정 반영)" : "🎬 최종 영상 만들기"}</button>
-        ${r ? `<div class="row"><a class="btn" href="${r.url}" download="${esc(r.file)}">⬇ MP4 다운로드</a><button class="btn" id="reveal">Finder에서 보기</button>
+        ${r ? `<div class="row"><a class="btn" href="${r.url}" download="${esc(r.file)}">⬇ MP4 다운로드</a><button class="btn" id="srtDl5">⬇ 자막 SRT</button><button class="btn" id="reveal">Finder에서 보기</button>
           <a class="btn primary" href="#/thumb?src=${encodeURIComponent(`proj:${p.id}:${r.file}`)}&url=${encodeURIComponent(r.url)}&name=${encodeURIComponent(p.name)}">🖼 이 영상으로 썸네일 만들기</a></div>` : ""}
         <div class="card tight stack">
           <b>📝 업로드용 정보</b>
@@ -1220,6 +1233,7 @@ function step5(body) {
     const pr = S.prompts.find((x) => x.category === "제목·설명") || { title: "제목·설명", target: "chatgpt", body: "아래 숏츠 대본으로 제목 5개, 설명 3줄, 해시태그 8개를 만들어줘.\n\n{대본}" };
     usePrompt(pr, { open: true, preset: { "대본": script } });
   };
+  $("#srtDl5")?.addEventListener("click", downloadSrt);
   $("#reveal")?.addEventListener("click", () => api("POST", "/api/reveal", { file: r.file, project: p.id }).catch(fail));
   $("#doRender").onclick = () => doRender(body);
   $("#fPrev").onclick = () => goStep(4);

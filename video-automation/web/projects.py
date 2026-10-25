@@ -551,6 +551,23 @@ def plan(p: dict) -> dict:
             "pieces": video_pieces(p, final), "segments": segments(p)}
 
 
+def _srt_time(t: float) -> str:
+    ms = int(round(max(0.0, t) * 1000))
+    return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+
+
+def srt(p: dict) -> dict:
+    """자막 전체를 SRT로. 시간은 영상 만들기와 같은 타임라인 계산을 쓴다."""
+    pl = plan(p)
+    scenes = {sc["id"]: sc for sc in p.get("scenes") or []}
+    rows = []
+    for x in pl["scenes"]:
+        text = (scenes[x["id"]].get("text") or "").strip()
+        if text:
+            rows.append(f"{len(rows) + 1}\n{_srt_time(x['start'])} --> {_srt_time(x['start'] + x['dur'])}\n{text}\n")
+    return {"srt": "\n".join(rows), "count": len(rows), "missing": pl["missing"]}
+
+
 def video_pieces(p: dict, timeline: list[dict]) -> list[dict]:
     """장면 → 영상 조각. 클립마다 맡은 장면 길이에 맞춰 속도를 조절하고(0.5~2배), 모자라면 반복한다."""
     segs = {s["clip"]: s for s in segments(p)}

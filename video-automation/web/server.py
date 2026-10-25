@@ -400,6 +400,11 @@ def project_plan(pid: str):
     return projects.plan(_project(pid))
 
 
+@app.get("/api/projects/{pid}/srt")
+def project_srt(pid: str):
+    return projects.srt(_project(pid))
+
+
 @app.post("/api/projects/{pid}/voice")
 def project_voice(pid: str, force: int = 0):
     p = _project(pid)
