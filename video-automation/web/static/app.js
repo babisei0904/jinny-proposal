@@ -555,6 +555,12 @@ async function viewSettings(v) {
         <button class="btn sm ghost danger" data-fvx="${i}">✕</button></div>`).join("")}</div>
       <div><button class="btn sm" id="fvAdd">+ 목소리 추가</button></div>
     </div>
+    <h2>✂️ 캡컷 내보내기</h2>
+    <div class="card stack">
+      <label class="f">캡컷 드래프트 폴더 <span class="faint">— 비워 두면 맥 기본 위치(무비 › CapCut › User Data › Projects › com.lveditor.draft)를 찾아요</span>
+        <input type="text" id="ccd" value="${esc(st.capcut_drafts || "")}" placeholder="~/Movies/CapCut/User Data/Projects/com.lveditor.draft"></label>
+      <div class="faint" style="font-size:13px">캡컷 › 설정 › 내 프로젝트 위치(드래프트 위치)에 보이는 폴더예요. 타오바오 자동화에 넣었던 경로와 같아요.</div>
+    </div>
     <h2>🎬 오프닝·아웃트로 멘트 프리셋</h2>
     <div class="card grid g2">
       <label class="f">오프닝 멘트 (한 줄에 하나)<textarea id="opP" rows="5">${esc((st.opening_presets || []).join("\n"))}</textarea></label>
@@ -583,7 +589,7 @@ async function viewSettings(v) {
       sync();
       const data = { links: {}, gemini_key: $("#gk", v).value, gemini_model: $("#gm", v).value, gemini_tts_model: $("#gtm", v).value,
         typecast_key: $("#tk", v).value, typecast_model: $("#tm", v).value,
-        fish_key: $("#fk", v).value, fish_model: $("#fm", v).value, fish_voices: fv,
+        fish_key: $("#fk", v).value, fish_model: $("#fm", v).value, fish_voices: fv, capcut_drafts: $("#ccd", v).value.trim(),
         opening_presets: $("#opP", v).value.split("\n"), outro_presets: $("#otP", v).value.split("\n") };
       v.querySelectorAll("[data-link]").forEach((el) => (data.links[el.dataset.link] = el.value));
       try { S.settings = await api("PUT", "/api/settings", data); toast("저장했어요"); } catch (e) { fail(e); }

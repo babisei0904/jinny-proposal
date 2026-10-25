@@ -143,7 +143,7 @@ function drawAd(ctx) {
   ctx.fillStyle = "#fff"; ctx.fillText("(광고)", CW - 36, 40); ctx.restore();
 }
 /** part: 'under' = 영상 아래 레이어, 'over' = 영상 위 레이어. 그린 것이 있으면 true */
-function drawLayers(ctx, p, scene, part, redraw) {
+function drawLayers(ctx, p, scene, part, redraw, noText = false) {
   ctx.clearRect(0, 0, CW, CH);
   const layers = p.layout.layers;
   const vi = layers.findIndex((l) => l.type === "video");
@@ -154,7 +154,7 @@ function drawLayers(ctx, p, scene, part, redraw) {
     if (scene && (scene.hide || []).includes(L.id)) continue;
     const isUnder = vi >= 0 && i > vi;
     if ((part === "under") !== isUnder) continue;
-    if (L.type === "subtitle") drew = drawTextLayer(ctx, L, layerText(L, p, scene)) || drew;
+    if (L.type === "subtitle") { if (!(noText && !isUnder)) drew = drawTextLayer(ctx, L, layerText(L, p, scene)) || drew; }
     else if (L.type === "shape") drew = drawShape(ctx, L) || drew;
     else if (L.type === "image") drew = drawImageLayer(ctx, L, redraw) || drew;
   }
@@ -1097,7 +1097,7 @@ async function step4(body) {
       <button class="scard ${i === MK.sel ? "sel" : ""}" data-ci="${i}"><span class="st">${p.clips[s.clip]?.poster && i === MK.sel ? `<img src="${p.clips[s.clip].poster}">` : `▣<small>${plan.scenes[i].dur.toFixed(1)}s</small>`}</span>
         <span class="sx"><span class="row between"><b>장면 ${i + 1}</b><span class="faint">Scene ${i + 1}</span></span><span class="tx">${esc(s.text || "(대사 없음)")}</span></span></button>`).join("")}</div><button class="btn sm ghost" id="crR">›</button></div>
     <div class="voice-bar"><div><b>🔊 전체 AI 목소리 합성 상태</b><div class="faint" style="font-size:12.5px">${plan.missing ? `목소리가 필요한 문장 ${plan.missing}개 (대사를 바꾸면 다시 만들어야 해요)` : "합성 완료 (자막 동기화 완료)"}</div></div>
-      <button class="btn red" id="reVoice">↻ 목소리 재합성 및 동기화</button></div>
+      <div class="row"><button class="btn" id="toCapcut">✂️ 캡컷으로 열기</button><button class="btn red" id="reVoice">↻ 목소리 재합성 및 동기화</button></div></div>
   </div>
   <div class="s4-grid">
     <div class="card tight stack" style="align-self:start;position:sticky;top:12px">
@@ -1130,6 +1130,7 @@ async function step4(body) {
     $("#pvBar").firstElementChild.style.width = (t / plan.total) * 100 + "%";
   });
   MK.player = player;
+  $("#toCapcut").onclick = () => { player.stop?.(); exportCapcut(); };
   MK.redraw = () => player.showAt(plan.scenes[MK.sel].start + 0.05);
   ensureFonts(p).then(() => MK.redraw?.());
   function markSel(i, full = true) {
@@ -1213,7 +1214,7 @@ function step5(body) {
       <div class="stack">
         <div id="rJob"></div>
         <button class="btn primary big" id="doRender">${r ? "↻ 다시 만들기 (수정 반영)" : "🎬 최종 영상 만들기"}</button>
-        ${r ? `<div class="row"><a class="btn" href="${r.url}" download="${esc(r.file)}">⬇ MP4 다운로드</a><button class="btn" id="srtDl5">⬇ 자막 SRT</button><button class="btn" id="reveal">Finder에서 보기</button>
+        ${r ? `<div class="row"><a class="btn" href="${r.url}" download="${esc(r.file)}">⬇ MP4 다운로드</a><button class="btn" id="srtDl5">⬇ 자막 SRT</button><button class="btn" id="toCapcut5">✂️ 캡컷으로 열기</button><button class="btn" id="reveal">Finder에서 보기</button>
           <a class="btn primary" href="#/thumb?src=${encodeURIComponent(`proj:${p.id}:${r.file}`)}&url=${encodeURIComponent(r.url)}&name=${encodeURIComponent(p.name)}">🖼 이 영상으로 썸네일 만들기</a></div>` : ""}
         <div class="card tight stack">
           <b>📝 업로드용 정보</b>
@@ -1234,11 +1235,54 @@ function step5(body) {
     usePrompt(pr, { open: true, preset: { "대본": script } });
   };
   $("#srtDl5")?.addEventListener("click", downloadSrt);
+  $("#toCapcut5")?.addEventListener("click", exportCapcut);
   $("#reveal")?.addEventListener("click", () => api("POST", "/api/reveal", { file: r.file, project: p.id }).catch(fail));
   $("#doRender").onclick = () => doRender(body);
   $("#fPrev").onclick = () => goStep(4);
   $("#fNext").onclick = () => (location.hash = "#/");
 }
+/* ---------------------------------------------------------------- 캡컷으로 내보내기 */
+async function exportCapcut() {
+  const p = MK.p;
+  let box;
+  const close = modal(`<h3>✂️ 캡컷으로 열기</h3><div id="ccBox"></div>`, (m) => (box = $("#ccBox", m)));
+  const show = (msg, f) => (box.innerHTML = `<div class="stack"><div class="row between"><b>${esc(msg)}</b><span class="faint">${Math.round(f * 100)}%</span></div><div class="bar"><i style="width:${Math.max(3, f * 100)}%"></i></div></div>`);
+  try {
+    show("장면 그림을 그리는 중", 0.01);
+    await mkSave(true);
+    await ensureFonts(p); await ensureImages(p);
+    const cv = document.createElement("canvas"); cv.width = CW; cv.height = CH;
+    const ctx = cv.getContext("2d");
+    const vi = p.layout.layers.findIndex((l) => l.type === "video");
+    const textLayers = p.layout.layers.filter((L, i) => L.type === "subtitle" && L.visible && !(vi >= 0 && i > vi));
+    const fd = new FormData(), scenes = [];
+    for (let i = 0; i < p.scenes.length; i++) {
+      const s = p.scenes[i], item = { scene: s.id, texts: {} };
+      for (const part of ["under", "over"]) {
+        if (drawLayers(ctx, p, s, part, null, true)) {
+          const blob = await new Promise((r) => cv.toBlob(r, "image/png"));
+          const name = `${part}_${i}.png`; fd.append("files", blob, name); item[part] = name;
+        }
+      }
+      for (const L of textLayers) if (!(s.hide || []).includes(L.id)) item.texts[L.id] = layerText(L, p, s);
+      scenes.push(item);
+      show(`장면 그림을 그리는 중 (${i + 1}/${p.scenes.length})`, 0.01 + (i / p.scenes.length) * 0.09);
+    }
+    fd.append("manifest", JSON.stringify({ scenes, textLayers }));
+    const job = await api("POST", `/api/projects/${p.id}/capcut`, fd);
+    const done = await waitJob(job.id, (j) => show(j.message, 0.1 + j.progress * 0.9));
+    const r = done.result;
+    box.innerHTML = `<div class="stack"><div class="notice"><b>✅ 캡컷 프로젝트를 만들었어요: ${esc(r.name)}</b></div>
+      <p>캡컷 첫 화면의 프로젝트 목록에서 <b>${esc(r.name)}</b>을 열어 주세요.${r.opened ? " 캡컷을 열어 두었어요." : ""}</p>
+      <p class="faint" style="font-size:13px">목록에 안 보이면 캡컷을 완전히 끄고(⌘Q) 다시 열어 주세요.<br>자막은 캡컷에서 바로 고칠 수 있는 글자로 들어가요. 크기·테두리는 비슷하게 맞춘 값이라 캡컷에서 한 번에 다듬어 주세요.</p>
+      <div class="row" style="justify-content:flex-end"><button class="btn primary" data-close>확인</button></div></div>`;
+    box.querySelector("[data-close]").onclick = close;
+  } catch (e) {
+    box.innerHTML = `<div class="notice bad"><b>캡컷으로 내보내지 못했어요.</b><br>${esc(e.message)}</div><div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="ccX">닫기</button></div>`;
+    $("#ccX").onclick = close;
+  }
+}
+
 async function doRender(body) {
   const p = MK.p, box = $("#rJob");
   $("#doRender").disabled = true;

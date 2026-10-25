@@ -40,6 +40,7 @@ DEFAULT_SETTINGS = {
     "fish_key": "",
     "fish_model": "s2.1-pro-free",
     "fish_voices": [],
+    "capcut_drafts": "",
     "opening_presets": [
         "요즘 난리 난 이 제품, 과연 소문대로 좋을까요?",
         "이거 모르면 진짜 손해예요.",
@@ -52,7 +53,7 @@ DEFAULT_SETTINGS = {
     ],
 }
 SETTING_KEYS = ["gemini_key", "gemini_model", "gemini_tts_model", "typecast_key", "typecast_model",
-                "fish_key", "fish_model"]
+                "fish_key", "fish_model", "capcut_drafts"]
 LIST_KEYS = ["opening_presets", "outro_presets"]
 
 _lock = threading.Lock()

@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import media, projects, store, thumbs, tts
+from . import capcut, media, projects, store, thumbs, tts
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("PORT", "8421"))
@@ -505,6 +505,37 @@ async def project_render(pid: str, manifest: str = Form(...), files: list[Upload
         job["result"] = result
 
     return _start("render", work)
+
+
+@app.post("/api/projects/{pid}/capcut")
+async def project_capcut(pid: str, manifest: str = Form(...), files: list[UploadFile] = File(default=[])):
+    """장면·자막·목소리를 캡컷 프로젝트로 만들고 캡컷을 연다."""
+    p = _project(pid)
+    try:
+        man = json.loads(manifest)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "내보내기 정보가 올바르지 않습니다.")
+    fdir = projects.pdir(pid) / "capcut_frames"
+    shutil.rmtree(fdir, ignore_errors=True)
+    fdir.mkdir()
+    for f in files:
+        name = Path(f.filename or "").name
+        if not re.match(r"^[a-z]+_[0-9a-zA-Z]+\.png$", name):
+            continue
+        with (fdir / name).open("wb") as out:
+            shutil.copyfileobj(f.file, out)
+    settings = store.get_settings()
+
+    def work(job, progress):
+        try:
+            result = capcut.export(p, settings, man, fdir, progress)
+        finally:
+            shutil.rmtree(fdir, ignore_errors=True)
+        if sys.platform == "darwin":
+            result["opened"] = subprocess.run(["open", "-a", "CapCut"], capture_output=True).returncode == 0
+        job["result"] = result
+
+    return _start("capcut", work)
 
 
 # ---------------------------------------------------------------- 썸네일 제작
