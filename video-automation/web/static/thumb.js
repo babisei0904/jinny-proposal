@@ -80,7 +80,7 @@ function thStep2(body, v) {
     <div class="stack">
       <div class="card tight stack"><b>▣ 썸네일 출력 비율 프리셋</b>
         <div class="grid g2">${Object.entries(TH_RATIOS).map(([k, r]) => `<button class="ratio-btn ${s.ratio === k ? "on" : ""}" data-r="${k}"><b>${r[2]}</b><span>${r[3]}</span></button>`).join("")}</div>
-        ${s.src.startsWith("proj:") ? `<div class="seg2"><button data-c="1" class="${s.clean !== false ? "on" : ""}">자막 없이 (원본 장면)</button><button data-c="0" class="${s.clean === false ? "on" : ""}">보이는 그대로</button></div>` : ""}
+        ${s.src.startsWith("proj:") ? `<div class="seg2"><button data-c="1" class="${s.clean !== false ? "on" : ""}">자막 없이 (원본 장면)</button><button data-c="0" class="${s.clean === false ? "on" : ""}">보이는 그대로</button></div><div id="cleanNote"></div>` : ""}
         <button class="btn big th-cta" id="cap">📸 현재 장면 캡처하기</button></div>
       <div class="card tight stack" id="snap" ${s.bg ? "" : "hidden"}><div class="row between"><b>✓ 캡처 완료된 스냅샷</b><span class="badge ok">완료</span></div>
         <div class="th-snap"><img id="snapImg" src="${s.bg?.url || ""}" alt=""></div>
@@ -106,12 +106,20 @@ function thStep2(body, v) {
   body.querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => { s.ratio = b.dataset.r; thSave(); body.querySelectorAll("[data-r]").forEach((x) => x.classList.toggle("on", x === b)); box(); }));
   body.querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => { s.clean = b.dataset.c === "1"; thSave(); body.querySelectorAll("[data-c]").forEach((x) => x.classList.toggle("on", x === b)); }));
   $("#reSrc").onclick = () => { s.step = 1; thRender(v); };
+  if (s.src.startsWith("proj:")) api("GET", `/api/thumb/clean?src=${encodeURIComponent(s.src)}`).then((c) => {
+    const el = $("#cleanNote"); if (!el || c.ok) return;
+    el.innerHTML = c.reason === "missing"
+      ? `<div class="notice warn" style="font-size:13px">원본 클립 파일을 찾을 수 없어 자막 없는 장면은 캡처할 수 없어요. '보이는 그대로'만 캡처돼요.</div>`
+      : `<div class="notice warn stack" style="font-size:13px;gap:8px"><div>이 영상은 업데이트 전에 만들었거나, 만든 뒤 대본·목소리가 바뀌어서 <b>자막 없는 원본 장면을 찾을 수 없어요.</b> 지금 캡처하면 자막·(광고)가 같이 찍혀요.</div>
+          <a class="btn sm primary" href="#/make?id=${c.pid}&rerender=thumb">↻ 영상 다시 만들고 여기로 돌아오기</a></div>`;
+  }).catch(() => {});
   $("#cap").onclick = async (e) => {
     e.target.disabled = true; e.target.textContent = "캡처하는 중…"; vid.pause();
     try {
       const r = await api("POST", "/api/thumb/frame", { src: s.src, t: vid.currentTime, clean: s.src.startsWith("proj:") && s.clean !== false });
       s.t = r.t; s.bg = r; s.view = { zoom: 1, ox: 0, oy: 0 }; thSave();
       $("#snapImg").src = r.url; $("#snap").hidden = false; TH.img = null;
+      $("#snapNote")?.remove(); if (r.note) $("#snapImg").parentElement.insertAdjacentHTML("afterend", `<div class="notice warn" id="snapNote" style="font-size:13px">${esc(r.note)}</div>`);
       toast(r.note || `${r.t.toFixed(2)}s 장면을 캡처했어요`);
     } catch (err) { fail(err); }
     e.target.disabled = false; e.target.textContent = "📸 현재 장면 캡처하기";

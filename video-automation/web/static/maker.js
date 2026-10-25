@@ -231,7 +231,11 @@ async function viewMaker(v, query) {
   const [p, vs, lays] = await Promise.all([api("GET", `/api/projects/${id}`), api("GET", "/api/voices"), api("GET", "/api/layouts")]);
   MK.p = p; MK.voices = vs.voices; MK.styles = vs.styles; MK.layouts = lays; MK.sel = 0; MK.plan = null; MK.layoutBase = "";
   window.__leave = () => { MK.player?.stop(); mkSave(true); MK.redraw = null; };
+  // 썸네일 제작에서 '다시 만들고 돌아오기': 5단계에서 바로 다시 만들고 끝나면 썸네일 제작으로 돌아간다
+  MK.afterRender = query.get("rerender") === "thumb" && p.scenes.length ? "thumb" : null;
+  if (MK.afterRender) { p.step = 5; p.maxStep = 5; history.replaceState(null, "", "#/make?id=" + p.id); }
   renderMaker();
+  if (MK.afterRender) $("#doRender")?.click();
 }
 function renderMaker() {
   const v = $("#view"), p = MK.p;
@@ -1312,6 +1316,11 @@ async function doRender(body) {
     const done = await waitJob(job.id, (j) => show(j.message, 0.1 + j.progress * 0.9));
     p.render = done.result;
     toast("영상이 완성됐어요!");
+    if (MK.afterRender === "thumb") {
+      MK.afterRender = null;
+      location.hash = `#/thumb?src=${encodeURIComponent(`proj:${p.id}:${p.render.file}`)}&url=${encodeURIComponent(p.render.url)}&name=${encodeURIComponent(p.name)}`;
+      return;
+    }
     step5(body);
   } catch (e) {
     box.innerHTML = `<div class="notice bad"><b>영상 만들기에 실패했어요.</b><br>${esc(e.message)}</div>`;

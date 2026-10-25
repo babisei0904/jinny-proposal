@@ -73,6 +73,23 @@ def frame(src: str, t: float, clean: bool = False) -> dict:
             "clean": False, "note": note}
 
 
+def clean_status(src: str) -> dict:
+    """자막 없는 원본 장면으로 캡처할 수 있는지 미리 알려 준다."""
+    if not src.startswith("proj:"):
+        return {"ok": False, "reason": "upload"}
+    video = resolve(src)
+    pid = src.split(":", 2)[1]
+    try:
+        m = _scene_map(src, video, media.probe(video))
+    except Exception:  # noqa: BLE001
+        m = None
+    if not m:
+        return {"ok": False, "reason": "old", "pid": pid}
+    if not all((store.UPLOADS / pc["id"]).exists() for pc in m["pieces"]):
+        return {"ok": False, "reason": "missing", "pid": pid}
+    return {"ok": True, "pid": pid}
+
+
 def _scene_map(src: str, video: Path, info: dict) -> dict | None:
     """렌더링 때 남긴 시간표. 예전 영상은 지금 프로젝트로 다시 계산하되, 길이가 같을 때만 믿는다."""
     side = video.with_suffix(".json")

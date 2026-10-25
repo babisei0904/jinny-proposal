@@ -545,6 +545,14 @@ def thumb_sources():
     return thumbs.sources()
 
 
+@app.get("/api/thumb/clean")
+def thumb_clean(src: str):
+    try:
+        return thumbs.clean_status(src)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/thumb/frame")
 def thumb_frame(data: dict):
     try:
