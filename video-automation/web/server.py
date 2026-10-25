@@ -17,7 +17,7 @@ import hashlib
 import json
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -674,12 +674,36 @@ app.mount("/files/outputs", StaticFiles(directory=store.OUTPUTS), name="outputs"
 app.mount("/files/tts_preview", StaticFiles(directory=store.DATA / "tts_preview"), name="tts_preview")
 app.mount("/files/projects", StaticFiles(directory=projects.PROJECTS), name="projects")
 app.mount("/files/thumbs", StaticFiles(directory=thumbs.THUMBS), name="thumbs")
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+class _FreshStatic(StaticFiles):
+    """화면 파일(js·css)은 브라우저가 예전 것을 쓰지 않도록 매번 바뀌었는지 확인하게 한다."""
+
+    async def get_response(self, path, scope):
+        r = await super().get_response(path, scope)
+        r.headers["Cache-Control"] = "no-cache"
+        return r
+
+
+app.mount("/static", _FreshStatic(directory=STATIC), name="static")
+
+
+def _version() -> str:
+    try:
+        r = subprocess.run(["git", "log", "-1", "--format=%h %cd", "--date=format:%m/%d %H:%M"],
+                           cwd=STATIC, capture_output=True, text=True, timeout=3)
+        return r.stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-store"})
+    # 파일이 바뀌면 주소(?v=)도 바뀌어서, 새로고침하지 않아도 새 화면 파일을 받는다
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    for name in ("app.js", "maker.js", "thumb.js", "style.css"):
+        v = int((STATIC / name).stat().st_mtime)
+        html = html.replace(f'/static/{name}"', f'/static/{name}?v={v}"')
+    html = html.replace("{{VERSION}}", _version())
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
 def _port_busy() -> bool:
@@ -725,7 +749,7 @@ def main():
             print(f"\n  {PORT}번 포트를 다른 프로그램이 쓰고 있어서 켤 수 없어요.\n"
                   f"  터미널에서  kill $(lsof -ti tcp:{PORT})  를 실행한 뒤 다시 켜 주세요.\n")
             sys.exit(1)
-    print(f"\n  영상 작업실이 켜졌어요 →  {url}\n  끄려면 이 창에서 Ctrl+C\n")
+    print(f"\n  영상 작업실이 켜졌어요 →  {url}\n  버전: {_version()}\n  끄려면 이 창에서 Ctrl+C\n")
     if os.environ.get("NO_BROWSER") != "1":
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
