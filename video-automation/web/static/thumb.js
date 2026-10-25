@@ -159,6 +159,7 @@ function thDraw(ctx, W, H, opts = {}) {
   if (s.dim.top) { ctx.fillStyle = grad(0, H * 0.45, s.dim.top); ctx.fillRect(0, 0, W, H * 0.45); }
   if (s.dim.bottom) { ctx.fillStyle = grad(H, H * 0.55, s.dim.bottom); ctx.fillRect(0, H * 0.55, W, H * 0.45); }
   for (const el of s.els) {
+    if (el.type === "image") { thDrawImage(ctx, el, opts.selected === el.id); continue; }
     if (el.type === "stroke") {
       if (el.pts.length < 2) continue;
       ctx.save(); ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = el.color; ctx.lineWidth = el.width;
@@ -195,6 +196,32 @@ function thDraw(ctx, W, H, opts = {}) {
   }
 }
 
+function thImg(url) { // 사진 요소: 한 번 불러와 두고, 다 불러오면 다시 그린다
+  TH.imgs = TH.imgs || {};
+  let im = TH.imgs[url];
+  if (!im) { im = new Image(); im.onload = () => TH.redraw?.(); im.src = url; TH.imgs[url] = im; }
+  return im.complete && im.naturalWidth ? im : null;
+}
+function thDrawImage(ctx, el, selected) {
+  const w = el.w, h = el.w * el.ar, left = el.x - w / 2, top = el.y - h / 2;
+  const r = Math.min(+el.radius || 0, w / 2, h / 2), bw = +el.border || 0;
+  el._box = { x: left - bw, y: top - bw, w: w + bw * 2, h: h + bw * 2 };
+  const im = thImg(el.url);
+  ctx.save();
+  ctx.globalAlpha = (el.opacity ?? 100) / 100;
+  const shadow = () => { ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = Math.max(w, h) * 0.05; ctx.shadowOffsetY = Math.max(w, h) * 0.015; };
+  if (bw > 0) { // 테두리 판(그림자 포함)을 먼저 깔고 그 위에 사진
+    if (el.shadow) shadow();
+    ctx.fillStyle = el.borderColor || "#fff"; ctx.beginPath(); ctx.roundRect(left - bw, top - bw, w + bw * 2, h + bw * 2, r ? r + bw : 0); ctx.fill();
+    ctx.shadowColor = "transparent";
+  }
+  if (!im) { ctx.fillStyle = "rgba(255,255,255,.15)"; ctx.fillRect(left, top, w, h); }
+  else if (r > 0) { ctx.beginPath(); ctx.roundRect(left, top, w, h, r); ctx.clip(); ctx.drawImage(im, left, top, w, h); }
+  else { if (el.shadow && !bw) shadow(); ctx.drawImage(im, left, top, w, h); } // 누끼 PNG는 모양 그대로 그림자
+  ctx.restore();
+  if (selected) { const b = el._box; ctx.save(); ctx.setLineDash([16, 10]); ctx.lineWidth = 5; ctx.strokeStyle = "#a855f7"; ctx.strokeRect(b.x - 8, b.y - 8, b.w + 16, b.h + 16); ctx.restore(); }
+}
+
 /* ---------- 3단계: 꾸미기 */
 function thStep3(body, v) {
   const s = TH.st;
@@ -209,13 +236,15 @@ function thStep3(body, v) {
         <div class="row" style="gap:4px">${[["select", "↖ 선택"], ["pen", "✎ 펜"], ["eraser", "⌫ 지우개"]].map(([k, l]) => `<button class="pill ${TH.mode === k ? "purple" : "ghost"}" data-mode="${k}">${l}</button>`).join("")}</div>
         <div class="row" style="gap:4px"><button class="pill ghost" id="undo">↶ 취소</button><button class="pill red" id="del">🗑 삭제</button></div></div>
       <canvas id="thCv" width="${W}" height="${H}" style="width:${Math.round(W * scale)}px;height:${Math.round(H * scale)}px" class="th-canvas mode-${TH.mode}"></canvas>
-      <div class="faint" style="font-size:12px;color:#aab">* 문구나 배지를 클릭/드래그하여 원하는 위치로 자유롭게 이동하세요.</div>
+      <div class="faint" style="font-size:12px;color:#aab">* 문구·배지·사진을 클릭/드래그하여 원하는 위치로 자유롭게 이동하세요.</div>
       <div class="row th-bgctl"><span>배경 확대</span><input type="range" id="bz" min="1" max="2.5" step="0.01" value="${s.view.zoom}"><span>가로</span><input type="range" id="bx" min="-100" max="100" value="${s.view.ox}"><span>세로</span><input type="range" id="by" min="-100" max="100" value="${s.view.oy}"></div>
     </div>
     <div class="stack">
       <div class="card tight stack">
         <b>✨ 요소 추가 및 꾸미기</b>
         <button class="btn th-cta" id="addT">T + 텍스트 문구 추가</button>
+        <button class="btn" id="addImg">🖼 + 사진 추가</button><input type="file" id="imgFile" accept="image/*,.heic,.heif" multiple hidden>
+        <span class="faint" style="font-size:12px;margin-top:-4px">제품 사진·로고 등을 올려요. 배경이 투명한 PNG(누끼)는 투명한 채로 들어가요. 사진을 캔버스로 끌어다 놓아도 돼요.</span>
         <span class="faint" style="font-size:12.5px">시선 집중 썸네일 배지 (클릭 시 즉시 삽입)</span>
         <div class="chips">${TH_BADGES.map(([l, c], i) => `<button class="badge-chip" data-b="${i}" style="background:${c}">${esc(l)}</button>`).join("")}</div>
         <span class="faint" style="font-size:12.5px">배경 효과 (글씨가 잘 보이게)</span>
@@ -288,6 +317,32 @@ function thStep3(body, v) {
       return;
     }
     if (!el) { box.innerHTML = `<b>T 선택된 요소 편집</b><p class="faint" style="margin:0">캔버스의 글자나 스티커를 클릭하면 상세 속성을 수정할 수 있습니다.</p>`; return; }
+    if (el.type === "image") {
+      const pct = Math.round((el.w / W) * 100);
+      box.innerHTML = `<div class="row between"><b>🖼 선택된 사진</b><button class="btn sm ghost danger" id="edDel">🗑 사진 삭제</button></div>
+        <span class="faint" style="font-size:12.5px">캔버스에서 드래그하여 원하는 위치로 이동하세요.</span>
+        <label class="f">크기 <span class="faint" id="edWL">(화면 너비의 ${pct}%)</span><input type="range" id="edW" min="5" max="150" value="${pct}"></label>
+        <div class="grid g2"><label class="f">모서리 둥글게 <span class="faint" id="edRL">(${el.radius || 0}px)</span><input type="range" id="edR" min="0" max="300" value="${el.radius || 0}"></label>
+          <label class="f">투명도 <span class="faint" id="edOL">(${el.opacity ?? 100}%)</span><input type="range" id="edO" min="10" max="100" value="${el.opacity ?? 100}"></label></div>
+        <div class="grid g2"><label class="f">테두리 두께 <span class="faint" id="edBL">(${el.border || 0}px)</span><input type="range" id="edB" min="0" max="40" value="${el.border || 0}"></label>
+          <label class="f">테두리 색<input type="color" id="edBC" value="${el.borderColor || "#ffffff"}"></label></div>
+        <label class="row" style="font-size:13px;gap:6px"><input type="checkbox" id="edSh" ${el.shadow ? "checked" : ""}> 그림자</label>
+        <div class="row"><button class="btn sm" id="edCx">↔ 가운데로</button><button class="btn sm" id="edDup">⧉ 복제</button><button class="btn sm" id="edUp">맨 앞으로</button><button class="btn sm" id="edDown">맨 뒤로</button></div>`;
+      const ch = (fn) => (e) => { thSnap(); fn(e); redraw(); };
+      ["edW", "edR", "edO", "edB"].forEach((id) => ($("#" + id).onpointerdown = () => thSnap()));
+      $("#edW").oninput = (e) => { el.w = Math.round((W * +e.target.value) / 100); $("#edWL").textContent = `(화면 너비의 ${e.target.value}%)`; redraw(); };
+      $("#edR").oninput = (e) => { el.radius = +e.target.value; $("#edRL").textContent = `(${el.radius}px)`; redraw(); };
+      $("#edO").oninput = (e) => { el.opacity = +e.target.value; $("#edOL").textContent = `(${el.opacity}%)`; redraw(); };
+      $("#edB").oninput = (e) => { el.border = +e.target.value; $("#edBL").textContent = `(${el.border}px)`; redraw(); };
+      $("#edBC").oninput = (e) => { el.borderColor = e.target.value; redraw(); };
+      $("#edSh").onchange = ch((e) => (el.shadow = e.target.checked));
+      $("#edCx").onclick = ch(() => (el.x = W / 2));
+      $("#edDup").onclick = ch(() => { const c = { ...deep(el), id: Math.random().toString(16).slice(2, 8), x: el.x + 40, y: el.y + 40 }; s.els.push(c); TH.sel = c.id; editor(); });
+      $("#edUp").onclick = ch(() => { s.els = s.els.filter((x) => x !== el); s.els.push(el); });
+      $("#edDown").onclick = ch(() => { s.els = [el, ...s.els.filter((x) => x !== el)]; });
+      $("#edDel").onclick = () => removeSel();
+      return;
+    }
     if (el.type === "badge") {
       box.innerHTML = `<div class="row between"><b>🏷 선택된 배지 스티커</b></div>
         <span class="faint" style="font-size:12.5px">캔버스에서 드래그하여 원하는 위치로 이동하세요.</span>
@@ -336,12 +391,33 @@ function thStep3(body, v) {
     box.querySelectorAll("[data-sty]").forEach((b) => (b.onclick = ch(() => { Object.assign(el, TH_STYLES[+b.dataset.sty][1]); editor(); })));
     $("#edDel").onclick = () => removeSel();
   }
-  const removeSel = () => { if (!TH.sel) return toast("지울 문구나 배지를 먼저 클릭하세요"); thSnap(); s.els = s.els.filter((x) => x.id !== TH.sel); TH.sel = null; editor(); redraw(); };
+  const removeSel = () => { if (!TH.sel) return toast("지울 문구·배지·사진을 먼저 클릭하세요"); thSnap(); s.els = s.els.filter((x) => x.id !== TH.sel); TH.sel = null; editor(); redraw(); };
   const setMode = (m) => { TH.mode = m; body.querySelectorAll("[data-mode]").forEach((b) => { b.classList.toggle("purple", b.dataset.mode === m); b.classList.toggle("ghost", b.dataset.mode !== m); }); cv.className = `th-canvas mode-${m}`; editor(); redraw(); };
   body.querySelectorAll("[data-mode]").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
   $("#del").onclick = removeSel;
   $("#undo").onclick = () => { const u = TH.undo.pop(); if (!u) return toast("되돌릴 내용이 없어요"); Object.assign(s, JSON.parse(u)); TH.sel = null; editor(); redraw(); };
-  const addEl = (el) => { thSnap(); s.els.push(el); TH.sel = el.id; setMode("select"); document.fonts.load(`${el.weight} 40px "${el.font}"`).then(redraw); };
+  const addEl = (el) => { thSnap(); s.els.push(el); TH.sel = el.id; setMode("select"); if (el.font) document.fonts.load(`${el.weight} 40px "${el.font}"`).then(redraw).catch(redraw); };
+  const addImages = async (files, at) => {
+    files = [...files].filter((f) => /^image\//.test(f.type) || /\.(heic|heif)$/i.test(f.name));
+    if (!files.length) return toast("사진 파일을 골라 주세요");
+    try {
+      const fd = new FormData(); files.forEach((f) => fd.append("files", f));
+      toast("사진 올리는 중…", 60000);
+      const res = await api("POST", "/api/upload?asset=1", fd);
+      for (const [i, r] of res.entries()) {
+        const im = await new Promise((ok, no) => { const x = new Image(); x.onload = () => ok(x); x.onerror = no; x.src = r.url; });
+        TH.imgs = TH.imgs || {}; TH.imgs[r.url] = im;
+        const ar = im.naturalHeight / im.naturalWidth, w = Math.round(Math.min(W * 0.5, (H * 0.4) / ar));
+        addEl({ id: Math.random().toString(16).slice(2, 8), type: "image", url: r.url, ar, w, x: Math.round((at?.x ?? W / 2) + i * 40), y: Math.round((at?.y ?? H / 2) + i * 40),
+          radius: 0, border: 0, borderColor: "#ffffff", shadow: true, opacity: 100 });
+      }
+      toast(`사진 ${res.length}장을 넣었어요. 끌어서 옮기고 오른쪽에서 크기를 바꿔요`);
+    } catch (err) { fail(err); }
+  };
+  $("#addImg").onclick = () => $("#imgFile").click();
+  $("#imgFile").onchange = (e) => { addImages(e.target.files); e.target.value = ""; };
+  cv.ondragover = (e) => e.preventDefault();
+  cv.ondrop = (e) => { e.preventDefault(); if (e.dataTransfer?.files?.length) addImages(e.dataTransfer.files, toCanvas(e)); };
   $("#addT").onclick = () => { const el = thNewText("새로운 강조 문구"); el.y = H * (0.3 + 0.12 * (s.els.length % 5)); addEl(el); };
   body.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { const [l, c] = TH_BADGES[+b.dataset.b]; addEl(thNewBadge(l, c)); }));
   body.querySelectorAll("[data-dim]").forEach((b) => (b.onclick = () => { thSnap(); const k = b.dataset.dim; s.dim[k] = s.dim[k] ? 0 : k === "all" ? 0.3 : 0.75; b.classList.toggle("red", !!s.dim[k]); redraw(); }));
@@ -362,6 +438,7 @@ function thStep3(body, v) {
     const b = e.target; b.disabled = true; b.textContent = "만드는 중…";
     try {
       await Promise.all(s.els.filter((x) => x.font).map((x) => document.fonts.load(`${x.weight || 400} 40px "${x.font}"`).catch(() => {})));
+      await Promise.all(s.els.filter((x) => x.type === "image").map((x) => new Promise((ok) => { const im = TH.imgs?.[x.url] || new Image(); if (im.complete && im.naturalWidth) return ok(); im.onload = im.onerror = ok; if (!im.src) { im.src = x.url; (TH.imgs = TH.imgs || {})[x.url] = im; } setTimeout(ok, 5000); })));
       const off = document.createElement("canvas"); off.width = W; off.height = H;
       thDraw(off.getContext("2d"), W, H);
       const blob = await new Promise((r) => off.toBlob(r, "image/png"));
