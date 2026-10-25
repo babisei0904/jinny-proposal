@@ -773,6 +773,7 @@ function step2Scenes(body) {
       <p class="muted mk-sub">동영상에서 인식된 장면 단위의 문장 구조입니다. 쇼츠 대본 텍스트를 편집해 주세요.</p></div>
       <div class="row"><button class="btn" id="srtDl">⬇ 자막 SRT</button><button class="btn" id="reAI">✨ AI 대본 재각색</button><button class="btn" id="addScene">+ 장면 추가</button></div></div>
     <div class="row" style="margin:6px 0 14px"><span class="mk-label" style="margin:0">영상 제목</span><input type="text" id="ptitle" value="${esc(p.title)}" placeholder="제목 (레이어의 {제목} 자리에 들어가요)" style="max-width:420px"></div>
+    <div style="margin-bottom:14px">${ttsBox(p)}</div>
     ${groups.map((g, gi) => { const c = p.clips[g.clip] || {}; return `
     <div class="card clip-group">
       <div class="row"><b>🎬 클립 #${g.clip + 1}</b><span class="badge warn">📍 편집 구간: ${(+c.in || 0).toFixed(2)}s - ${(+c.out || 0).toFixed(2)}s (${clipLen(c).toFixed(2)}초 사용)</span></div>
@@ -793,6 +794,7 @@ function step2Scenes(body) {
   $("#addScene").onclick = () => addAfter(p.scenes.length - 1, p.scenes.length ? p.scenes[p.scenes.length - 1].clip : 0);
   body.querySelectorAll("[data-addclip]").forEach((b) => (b.onclick = () => addAfter(+b.dataset.after, +b.dataset.addclip)));
   bindSceneCards(body, () => step2Scenes(body));
+  bindTtsBox(body, () => step2Scenes(body));
   $("#fPrev").onclick = () => { p.script.view = "settings"; touch(); step2(body); };
   $("#fNext").onclick = () => {
     const empty = p.scenes.filter((s) => !s.text.trim()).length;
