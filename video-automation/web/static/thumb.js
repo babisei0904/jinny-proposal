@@ -55,7 +55,20 @@ async function thStep1(body, v) {
     <p class="muted">직접 비디오 파일을 업로드하거나, '영상 만들기'에서 완성한 영상을 불러올 수 있어요.</p>
     <span class="badge warn">⏱ 1분(60초) 이하의 쇼츠/릴스 영상을 권장해요</span>
     <div class="drop" id="thDrop" style="margin:18px auto;max-width:640px"><div class="up-ico">⇪</div><b>비디오 파일을 여기에 끌어다 놓거나 파일 선택</b><br><span class="faint">MP4, MOV, WebM</span></div>
+    <div class="faint" style="margin:6px 0">또는</div>
+    <div class="drop" id="thPhotoDrop" style="margin:8px auto 18px;max-width:640px;padding:18px"><div class="up-ico">🖼</div><b>사진으로 썸네일 만들기</b><br><span class="faint">영상 없이 사진 한 장으로 바로 꾸며요 · JPG, PNG, HEIC</span></div>
     <div id="thSrcs"></div></div>`;
+  dropZone($("#thPhotoDrop"), "image/*,.heic,.heif", async (files) => {
+    const f = files.find((x) => /^image\//.test(x.type) || /\.(heic|heif)$/i.test(x.name));
+    if (!f) return toast("사진 파일을 골라 주세요");
+    try {
+      const [r] = await uploadFiles([f]);
+      const im = await new Promise((ok, no) => { const x = new Image(); x.onload = () => ok(x); x.onerror = no; x.src = r.url; });
+      Object.assign(TH.st, thDefault(), { srcName: r.name, insert: false, step: 3,
+        bg: { url: r.url, width: im.naturalWidth, height: im.naturalHeight, t: 0, photo: true } });
+      TH.img = null; TH.undo = []; TH.st.els = [thNewText("핵심 썸네일 문구 입력")]; thRender(v);
+    } catch (e) { fail(e); }
+  });
   dropZone($("#thDrop"), "video/*,.mov,.mp4,.m4v", async (files) => {
     const f = files.find((x) => /^video\//.test(x.type) || /\.(mov|mp4|m4v|webm)$/i.test(x.name));
     if (!f) return toast("영상 파일을 골라 주세요");
@@ -81,8 +94,11 @@ function thStep2(body, v) {
       <div class="card tight stack"><b>▣ 썸네일 출력 비율 프리셋</b>
         <div class="grid g2">${Object.entries(TH_RATIOS).map(([k, r]) => `<button class="ratio-btn ${s.ratio === k ? "on" : ""}" data-r="${k}"><b>${r[2]}</b><span>${r[3]}</span></button>`).join("")}</div>
         ${s.src.startsWith("proj:") ? `<div class="seg2"><button data-c="1" class="${s.clean !== false ? "on" : ""}">자막 없이 (원본 장면)</button><button data-c="0" class="${s.clean === false ? "on" : ""}">보이는 그대로</button></div><div id="cleanNote"></div>` : ""}
-        <button class="btn big th-cta" id="cap">📸 현재 장면 캡처하기</button></div>
-      <div class="card tight stack" id="snap" ${s.bg ? "" : "hidden"}><div class="row between"><b>✓ 캡처 완료된 스냅샷</b><span class="badge ok">완료</span></div>
+        <button class="btn big th-cta" id="cap">📸 현재 장면 캡처하기</button>
+        <div class="faint" style="text-align:center;font-size:12.5px">또는</div>
+        <button class="btn big" id="capPhoto">🖼 사진으로 썸네일 만들기</button><input type="file" id="photoFile" accept="image/*,.heic,.heif" hidden>
+        <span class="faint" style="font-size:12px;margin-top:-4px">영상 장면 대신 내 사진을 썸네일 배경으로 써요. 완성한 썸네일은 이 영상 맨 앞(또는 맨 뒤)에 넣을 수 있어요.</span></div>
+      <div class="card tight stack" id="snap" ${s.bg ? "" : "hidden"}><div class="row between"><b id="snapTitle">${s.bg?.photo ? "✓ 썸네일로 쓸 사진" : "✓ 캡처 완료된 스냅샷"}</b><span class="badge ok">완료</span></div>
         <div class="th-snap"><img id="snapImg" src="${s.bg?.url || ""}" alt=""></div>
         <button class="btn big th-next" id="go3">3단계 썸네일 꾸미기로 이동 ›</button></div>
     </div>
@@ -117,12 +133,27 @@ function thStep2(body, v) {
     e.target.disabled = true; e.target.textContent = "캡처하는 중…"; vid.pause();
     try {
       const r = await api("POST", "/api/thumb/frame", { src: s.src, t: vid.currentTime, clean: s.src.startsWith("proj:") && s.clean !== false });
-      s.t = r.t; s.bg = r; s.view = { zoom: 1, ox: 0, oy: 0 }; thSave();
+      s.t = r.t; s.bg = r; s.view = { zoom: 1, ox: 0, oy: 0 }; thSave(); $("#snapTitle").textContent = "✓ 캡처 완료된 스냅샷";
       $("#snapImg").src = r.url; $("#snap").hidden = false; TH.img = null;
       $("#snapNote")?.remove(); if (r.note) $("#snapImg").parentElement.insertAdjacentHTML("afterend", `<div class="notice warn" id="snapNote" style="font-size:13px">${esc(r.note)}</div>`);
       toast(r.note || `${r.t.toFixed(2)}s 장면을 캡처했어요`);
     } catch (err) { fail(err); }
     e.target.disabled = false; e.target.textContent = "📸 현재 장면 캡처하기";
+  };
+  $("#capPhoto").onclick = () => $("#photoFile").click();
+  $("#photoFile").onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    const b = $("#capPhoto"); b.disabled = true; b.textContent = "사진 올리는 중…"; vid.pause();
+    try {
+      const [r] = await uploadFiles([f]);
+      const im = await new Promise((ok, no) => { const x = new Image(); x.onload = () => ok(x); x.onerror = no; x.src = r.url; });
+      s.bg = { url: r.url, width: im.naturalWidth, height: im.naturalHeight, t: s.t || 0, photo: true };
+      s.view = { zoom: 1, ox: 0, oy: 0 }; thSave(); TH.img = null;
+      $("#snapImg").src = r.url; $("#snap").hidden = false; $("#snapTitle").textContent = "✓ 썸네일로 쓸 사진"; $("#snapNote")?.remove();
+      toast("사진을 썸네일 배경으로 골랐어요. 3단계에서 위치·확대를 맞출 수 있어요");
+    } catch (err) { fail(err); }
+    b.disabled = false; b.textContent = "🖼 사진으로 썸네일 만들기";
   };
   $("#go3").onclick = () => {
     if (!s.bg) return toast("먼저 장면을 캡처해 주세요");
@@ -229,7 +260,7 @@ function thStep3(body, v) {
   const [W, H] = thSize();
   const maxH = Math.min(640, Math.round(window.innerHeight * 0.72)), maxW = 640;
   const scale = Math.min(maxH / H, maxW / W);
-  body.innerHTML = `<div class="row between"><div><h2 class="mk-h">3단계: 썸네일 문구 & 그래픽 꾸미기</h2><p class="muted mk-sub">강렬한 제목 문구, 시선 집중 배지, 자유 드로잉으로 클릭을 부르는 썸네일을 완성하세요.</p></div><button class="btn ghost" id="reCap">장면 다시 캡처</button></div>
+  body.innerHTML = `<div class="row between"><div><h2 class="mk-h">3단계: 썸네일 문구 & 그래픽 꾸미기</h2><p class="muted mk-sub">강렬한 제목 문구, 시선 집중 배지, 자유 드로잉으로 클릭을 부르는 썸네일을 완성하세요.</p></div><button class="btn ghost" id="reCap">${s.src ? "장면 다시 캡처" : "사진 다시 고르기"}</button></div>
   <div class="th-grid">
     <div class="th-dark stack" style="align-items:center">
       <div class="row between" style="width:${Math.max(320, Math.round(W * scale))}px">
@@ -250,17 +281,18 @@ function thStep3(body, v) {
         <span class="faint" style="font-size:12.5px">배경 효과 (글씨가 잘 보이게)</span>
         <div class="row">${[["bottom", "하단 어둡게"], ["top", "상단 어둡게"], ["all", "전체 어둡게"]].map(([k, l]) => `<button class="btn sm ${s.dim[k] ? "red" : ""}" data-dim="${k}">${l}</button>`).join("")}</div>
       </div>
+      ${s.src ? "" : `<div class="card tight stack"><b>▣ 썸네일 비율</b><div class="seg2">${Object.entries(TH_RATIOS).map(([k, r]) => `<button data-r="${k}" class="${s.ratio === k ? "on" : ""}">${k === "orig" ? "사진 그대로" : r[2]}</button>`).join("")}</div></div>`}
       <div class="card tight stack" id="thEd"></div>
     </div>
   </div>
   <div class="card tight stack" style="margin-top:16px">
-    <div class="row between"><div><b>🎬 영상에 썸네일 1프레임 자동 삽입</b> <span class="badge brand">유튜브 쇼츠 / 릴스 커버 설정용</span>
+    ${s.src ? `<div class="row between"><div><b>🎬 영상에 썸네일 1프레임 자동 삽입</b> <span class="badge brand">유튜브 쇼츠 / 릴스 커버 설정용</span>
       <div class="faint" style="font-size:12.5px">영상의 첫 프레임(또는 마지막 프레임)에 약 0.04초 동안 썸네일을 삽입하여, 플랫폼에서 커버로 지정하기 쉬운 비디오를 합성합니다.</div></div>
       <label class="switch"><input type="checkbox" id="ins" ${s.insert ? "checked" : ""}><span></span></label></div>
     <div class="grid g2" id="insOpts" ${s.insert ? "" : "hidden"}>
       <div class="stack" style="gap:6px"><span class="mk-label" style="margin:0">삽입 위치</span><div class="seg2">${[["start", "⊙ 맨 앞 (첫 프레임)"], ["end", "⊙ 맨 뒤 (마지막 프레임)"]].map(([k, l]) => `<button data-pos="${k}" class="${s.position === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
       <div class="stack" style="gap:6px"><span class="mk-label" style="margin:0">프레임 노출 시간</span><div class="seg2">${[[0.04, "1프레임 (0.04s)"], [0.1, "0.1초"], [0.5, "0.5초"]].map(([k, l]) => `<button data-sec="${k}" class="${+s.seconds === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
-    </div>
+    </div>` : ""}
     <div class="row between"><label class="row" style="font-size:13px;gap:8px">파일 이름 <input type="text" id="tname" value="${esc(s.name)}" style="max-width:220px"></label>
       <button class="btn big th-cta" id="done">4단계: 다운로드 및 합성하기 ›</button></div>
   </div>`;
@@ -422,8 +454,9 @@ function thStep3(body, v) {
   body.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { const [l, c] = TH_BADGES[+b.dataset.b]; addEl(thNewBadge(l, c)); }));
   body.querySelectorAll("[data-dim]").forEach((b) => (b.onclick = () => { thSnap(); const k = b.dataset.dim; s.dim[k] = s.dim[k] ? 0 : k === "all" ? 0.3 : 0.75; b.classList.toggle("red", !!s.dim[k]); redraw(); }));
   ["bz", "bx", "by"].forEach((id) => { const el = $("#" + id); el.onpointerdown = () => thSnap(); el.oninput = () => { s.view = { zoom: +$("#bz").value, ox: +$("#bx").value, oy: +$("#by").value }; redraw(); }; });
-  $("#reCap").onclick = () => { s.step = 2; thRender(v); };
-  $("#ins").onchange = (e) => { s.insert = e.target.checked; $("#insOpts").hidden = !s.insert; thSave(); };
+  $("#reCap").onclick = () => { s.step = s.src ? 2 : 1; thRender(v); };
+  body.querySelectorAll("[data-r]").forEach((b) => (b.onclick = () => { s.ratio = b.dataset.r; thSave(); thRender(v); }));
+  $("#ins")?.addEventListener("change", (e) => { s.insert = e.target.checked; $("#insOpts").hidden = !s.insert; thSave(); });
   body.querySelectorAll("[data-pos]").forEach((b) => (b.onclick = () => { s.position = b.dataset.pos; body.querySelectorAll("[data-pos]").forEach((x) => x.classList.toggle("on", x === b)); thSave(); }));
   body.querySelectorAll("[data-sec]").forEach((b) => (b.onclick = () => { s.seconds = +b.dataset.sec; body.querySelectorAll("[data-sec]").forEach((x) => x.classList.toggle("on", x === b)); thSave(); }));
   $("#tname").oninput = (e) => { s.name = e.target.value; thSave(); };
@@ -472,17 +505,17 @@ function thStep4(body, v) {
       <div class="row"><button class="btn ghost sm" id="pv">미리보기</button><a class="btn primary" href="${r.mp4}" download="${esc(r.mp4_file || "thumbnail.mp4")}">⬇ 영상 다운로드 (MP4)</a></div></div>
     <video src="${r.mp4}" controls playsinline id="pvV" hidden class="th-mp4v"></video>
   </div>` : ""}
-  <div class="card mk-card stack" style="margin-top:14px;gap:8px">
+  ${s.src ? `<div class="card mk-card stack" style="margin-top:14px;gap:8px">
     <span class="badge brand" style="align-self:start">캡컷에서 이어서 편집</span>
     <b>✂️ 썸네일을 넣은 영상을 캡컷으로 열기</b>
     <span class="faint">${s.src.startsWith("proj:") ? "영상 만들기의 장면·자막·목소리를 따로따로 고칠 수 있는 캡컷 프로젝트로 열고," : "이 영상을 캡컷 프로젝트로 열고,"} 썸네일을 영상 ${s.position === "end" ? "맨 뒤" : "맨 앞"}에 ${s.seconds}초 넣어요.</span>
     <div class="row"><button class="btn primary" id="toCapcutTh">✂️ 캡컷으로 열기</button></div>
-  </div>
-  <div class="row" style="justify-content:center;margin-top:16px"><button class="btn ghost" id="again">↻ 다른 장면 캡처하기</button><button class="btn ghost" id="restart">새로운 영상으로 처음부터 만들기</button></div>`;
+  </div>` : ""}
+  <div class="row" style="justify-content:center;margin-top:16px"><button class="btn ghost" id="again">${s.src ? "↻ 다른 장면 캡처하기" : "↻ 다른 사진으로 만들기"}</button><button class="btn ghost" id="restart">새로운 영상으로 처음부터 만들기</button></div>`;
   body.querySelectorAll("[data-rv]").forEach((b) => (b.onclick = () => api("POST", "/api/reveal", { file: b.dataset.rv, project: "thumbs" }).catch(fail)));
   $("#pv")?.addEventListener("click", () => { $("#pvV").hidden = !$("#pvV").hidden; });
-  $("#again").onclick = () => { s.step = 2; thRender(v); };
-  $("#toCapcutTh").onclick = () => {
+  $("#again").onclick = () => { s.step = s.src ? 2 : 1; thRender(v); };
+  if (s.src) $("#toCapcutTh").onclick = () => {
     const cover = { file: r.png_file, position: s.position || "start", seconds: +s.seconds || 0.1 };
     if (s.src.startsWith("proj:")) exportCapcut({ pid: s.src.split(":")[1], cover });
     else exportCapcut({ src: s.src, name: s.srcName, cover });
