@@ -17,11 +17,11 @@ import hashlib
 import json
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import capcut, media, projects, store, thumbs, tts
+from . import capcut, media, projects, remote, store, thumbs, tts
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("PORT", "8421"))
@@ -31,6 +31,22 @@ VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
 ID_RE = re.compile(r"^[0-9a-f]{32}\.(jpg|png|mp4|mov|m4v|webm|mkv|avi)$")
 
 app = FastAPI(title="영상 작업실")
+LISTEN_ALL = False  # main()에서 '밖에서 쓰기'가 켜져 있으면 True (모든 네트워크에서 기다림)
+
+
+@app.middleware("http")
+async def only_my_devices(request: Request, call_next):
+    """이 맥과, '밖에서 쓰기'를 켰을 때 Tailscale로 연결된 내 기기에서 온 요청만 받는다."""
+    host = request.client.host if request.client else ""
+    if not remote.allowed(host, bool(store.get_settings().get("remote_access"))):
+        return PlainTextResponse("영상 작업실: 이 기기에서는 접속할 수 없어요. Tailscale로 연결된 기기에서 열어 주세요.",
+                                 status_code=403)
+    return await call_next(request)
+
+
+def _mac_only(request: Request) -> None:
+    if not remote.is_local(request.client.host if request.client else ""):
+        raise HTTPException(400, "이 버튼은 맥에서 직접 쓸 때만 돼요. (폰에서 누르면 맥 화면에서 열려요)")
 
 
 # ---------------------------------------------------------------- 공통
@@ -624,7 +640,8 @@ class OpenApp(BaseModel):
 
 
 @app.post("/api/open-app")
-def open_app(req: OpenApp):
+def open_app(req: OpenApp, request: Request):
+    _mac_only(request)
     allowed = {"Vrew": "Vrew", "CapCut": "CapCut"}
     name = allowed.get(req.app)
     if not name:
@@ -643,7 +660,8 @@ class Reveal(BaseModel):
 
 
 @app.post("/api/reveal")
-def reveal(req: Reveal):
+def reveal(req: Reveal, request: Request):
+    _mac_only(request)
     if "/" in req.file or "\\" in req.file:
         raise HTTPException(400, "잘못된 파일입니다.")
     root = store.OUTPUTS
@@ -658,6 +676,16 @@ def reveal(req: Reveal):
         raise HTTPException(400, f"Finder 열기는 Mac에서만 됩니다. 저장 위치: {target}")
     subprocess.run(["open", "-R", str(target)] if req.file else ["open", str(target)])
     return {"ok": True}
+
+
+@app.get("/api/remote")
+def remote_info(request: Request):
+    st = remote.tailscale_status()
+    port = PORT
+    urls = [f"http://{st['dns']}:{port}"] if st["dns"] else []
+    urls += [f"http://{ip}:{port}" for ip in st["ips"]]
+    return {"enabled": bool(store.get_settings().get("remote_access")), "listening": LISTEN_ALL,
+            "tailscale": st, "urls": urls, "this_device_local": remote.is_local(request.client.host if request.client else "")}
 
 
 @app.get("/api/health")
@@ -742,7 +770,9 @@ def _stop_old_server() -> bool:
 def main():
     import uvicorn
 
+    global LISTEN_ALL
     url = f"http://{HOST}:{PORT}"
+    LISTEN_ALL = bool(store.get_settings().get("remote_access"))
     if _port_busy():
         print("\n  예전에 켠 영상 작업실이 아직 켜져 있어서 끄고 새로 켤게요…")
         if not _stop_old_server():
@@ -750,9 +780,15 @@ def main():
                   f"  터미널에서  kill $(lsof -ti tcp:{PORT})  를 실행한 뒤 다시 켜 주세요.\n")
             sys.exit(1)
     print(f"\n  영상 작업실이 켜졌어요 →  {url}\n  버전: {_version()}\n  끄려면 이 창에서 Ctrl+C\n")
+    if LISTEN_ALL:
+        ts = remote.tailscale_status()
+        where = "  ".join([f"http://{ts['dns']}:{PORT}"] * bool(ts["dns"]) + [f"http://{ip}:{PORT}" for ip in ts["ips"]])
+        print(f"  📱 밖에서 쓰기 켜짐 (Tailscale 기기만) →  {where or 'Tailscale을 켜면 주소가 생겨요'}\n"
+              f"  쓰는 동안 맥이 저절로 잠들지 않게 해 둘게요.\n")
+        remote.keep_awake(os.getpid())
     if os.environ.get("NO_BROWSER") != "1":
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-    uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
+    uvicorn.run(app, host="0.0.0.0" if LISTEN_ALL else HOST, port=PORT, log_level="warning")
 
 
 if __name__ == "__main__":

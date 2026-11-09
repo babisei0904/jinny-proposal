@@ -521,6 +521,45 @@ function viewPrompts(v) {
   render();
 }
 
+/* ------------------------------------------------------------ 밖에서 쓰기 (Tailscale) */
+async function remoteBox(box) {
+  let r;
+  try { r = await api("GET", "/api/remote"); } catch (e) { box.innerHTML = `<div class="notice bad">${esc(e.message)}</div>`; return; }
+  const ts = r.tailscale, url = r.urls.find((u) => /\/\/\d/.test(u)) || r.urls[0];
+  const steps = `<ol style="margin:0;padding-left:20px;line-height:1.8;font-size:13.5px">
+      <li>맥에 <a class="link" href="https://tailscale.com/download/mac" target="_blank">Tailscale</a>을 설치하고 로그인해요 (무료, 구글 계정 등으로).</li>
+      <li>폰에 App Store/Play 스토어에서 <b>Tailscale</b> 앱을 설치하고 <b>같은 계정</b>으로 로그인한 뒤 연결(Connect)을 켜요.</li>
+      <li>아래 스위치를 켜고, 터미널에서 서버를 다시 켜요 (Ctrl+C → <code>python -m web.server</code>).</li>
+      <li>폰에서 아래 주소를 열거나 QR을 찍어요. Safari 공유 버튼 → <b>홈 화면에 추가</b>를 누르면 앱처럼 쓸 수 있어요.</li></ol>`;
+  let state;
+  if (!r.this_device_local) state = `<div class="notice">📱 지금 Tailscale로 연결된 기기에서 보고 있어요.</div>`;
+  else if (!ts.installed) state = `<div class="notice warn">이 맥에 Tailscale이 아직 없어요. 아래 1번부터 해 주세요.</div>`;
+  else if (!ts.running || !ts.ips.length) state = `<div class="notice warn">Tailscale이 설치돼 있지만 꺼져 있거나 로그인 전이에요. 메뉴 막대의 Tailscale 아이콘에서 로그인·연결해 주세요.</div>`;
+  else if (r.enabled && !r.listening) state = `<div class="notice warn">켜 두었어요. <b>서버를 다시 켜면</b> 적용돼요: 터미널에서 Ctrl+C → <code>python -m web.server</code></div>`;
+  else if (r.enabled) state = `<div class="notice">✅ 밖에서 쓰기 켜짐. Tailscale로 연결된 내 기기에서만 열려요.</div>`;
+  else state = `<div class="faint" style="font-size:13px">꺼져 있어요. 켜면 Tailscale로 연결된 내 기기(폰·다른 컴퓨터)에서만 열리고, 같은 와이파이의 다른 사람은 들어올 수 없어요.</div>`;
+  box.innerHTML = `<div class="row between"><div><b>폰·다른 컴퓨터에서 이 맥의 영상 작업실 쓰기</b>
+      <div class="faint" style="font-size:12.5px">처리는 이 맥이 해요. 쓰는 동안 맥이 켜져 있어야 하고, 서버가 켜진 동안 맥이 저절로 잠들지 않게 해 둬요 (뚜껑을 닫으면 잠들 수 있어요).</div></div>
+      <label class="switch"><input type="checkbox" id="rmOn" ${r.enabled ? "checked" : ""}><span></span></label></div>
+    ${state}
+    ${r.enabled && ts.ips.length ? `<div class="row" style="align-items:flex-start;gap:18px;flex-wrap:wrap">
+      <div id="rmQr" style="background:#fff;padding:8px;border-radius:10px;line-height:0"></div>
+      <div class="stack" style="gap:6px;min-width:0">${r.urls.map((u) => `<div class="row" style="flex-wrap:nowrap"><code style="word-break:break-all">${esc(u)}</code><button class="btn sm" data-cp="${esc(u)}">복사</button></div>`).join("")}
+        <span class="faint" style="font-size:12.5px">폰의 Tailscale이 연결(Connect)된 상태에서 열어요. 숫자 주소가 가장 확실해요.</span></div></div>` : ""}
+    <details ${r.enabled && ts.ips.length ? "" : "open"}><summary class="faint" style="cursor:pointer;font-size:13px">처음 설정하는 방법</summary>${steps}</details>`;
+  box.querySelectorAll("[data-cp]").forEach((b) => (b.onclick = () => copyText(b.dataset.cp).then(() => toast("주소를 복사했어요"))));
+  $("#rmOn", box).onchange = async (e) => {
+    try { S.settings = await api("PUT", "/api/settings", { remote_access: e.target.checked }); toast(e.target.checked ? "켰어요. 서버를 다시 켜면 적용돼요" : "껐어요. 지금부터 다른 기기에서 열 수 없어요"); }
+    catch (err) { fail(err); }
+    remoteBox(box);
+  };
+  const qrEl = $("#rmQr", box);
+  if (qrEl && url) {
+    if (!window.qrcode) await new Promise((ok) => { const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"; sc.onload = sc.onerror = ok; document.head.appendChild(sc); });
+    if (window.qrcode) { const q = window.qrcode(0, "M"); q.addData(url); q.make(); qrEl.innerHTML = q.createSvgTag({ cellSize: 4, margin: 0 }); }
+  }
+}
+
 /* ------------------------------------------------------------ 설정 */
 async function viewSettings(v) {
   const health = await api("GET", "/api/health").catch(() => ({}));
@@ -555,6 +594,8 @@ async function viewSettings(v) {
         <button class="btn sm ghost danger" data-fvx="${i}">✕</button></div>`).join("")}</div>
       <div><button class="btn sm" id="fvAdd">+ 목소리 추가</button></div>
     </div>
+    <h2>📱 밖에서 쓰기 (Tailscale)</h2>
+    <div class="card stack" id="remoteBox"><div class="faint">확인하는 중…</div></div>
     <h2>✂️ 캡컷 내보내기</h2>
     <div class="card stack">
       <label class="f">캡컷 드래프트 폴더 <span class="faint">— 비워 두면 맥 기본 위치(무비 › CapCut › User Data › Projects › com.lveditor.draft)를 찾아요</span>
@@ -595,6 +636,7 @@ async function viewSettings(v) {
       try { S.settings = await api("PUT", "/api/settings", data); toast("저장했어요"); } catch (e) { fail(e); }
     };
     $("#folder", v).onclick = () => api("POST", "/api/reveal", { file: "" }).catch(fail);
+    remoteBox($("#remoteBox", v));
     $("#tcRefresh", v).onclick = async () => {
       $("#tcInfo", v).textContent = "저장하고 목록을 받는 중…";
       try { await $("#saveS", v).onclick(); const r = await api("POST", "/api/typecast/refresh"); $("#tcInfo", v).textContent = `목소리 ${r.count}개를 받았어요`; }

@@ -41,6 +41,7 @@ DEFAULT_SETTINGS = {
     "fish_model": "s2.1-pro-free",
     "fish_voices": [],
     "capcut_drafts": "",
+    "remote_access": False,
     "opening_presets": [
         "요즘 난리 난 이 제품, 과연 소문대로 좋을까요?",
         "이거 모르면 진짜 손해예요.",
@@ -91,6 +92,8 @@ def save_settings(data: dict) -> dict:
         for k in LIST_KEYS:
             if isinstance(data.get(k), list):
                 cur[k] = [str(x).strip() for x in data[k] if str(x).strip()][:30]
+        if isinstance(data.get("remote_access"), bool):
+            cur["remote_access"] = data["remote_access"]
         if isinstance(data.get("fish_voices"), list):
             cur["fish_voices"] = [
                 {"name": str(v.get("name", "")).strip()[:30] or "내 목소리", "id": str(v.get("id", "")).strip()[:80],
