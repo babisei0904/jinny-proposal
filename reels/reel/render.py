@@ -121,7 +121,32 @@ def draw_badges(frame: Image.Image, cfg: dict, small: ImageFont.FreeTypeFont) ->
     return frame
 
 
-def render(scenes: list[dict], audio: Path | None, out: Path, cfg: dict, tail: float = 0.4) -> None:
+def cover_frame(cover: dict, folder_photo: Path, cfg: dict) -> Image.Image:
+    """썸네일용 표지 1장. 벤치마크 4/5 가 0초에 1~2프레임만 넣는다 (피드 썸네일로만 보임).
+    cover = {"photo": "05.jpg", "label": "평일 4만원대 + 조개캐기", "lines": ["바다 바로 앞", "노천탕 카라반"]}"""
+    img = next(photo_frames(folder_photo, 1, "none"))
+    d = ImageDraw.Draw(img)
+    big = font(cfg.get("cover_size", 118), cfg.get("font"))
+    lab = font(46, cfg.get("font"))
+    lines = [l for l in cover.get("lines", []) if l]
+    lh = big.size * 1.18
+    y = H * cfg.get("cover_y", 0.36) - lh * len(lines) / 2
+    if cover.get("label"):
+        t = cover["label"]
+        tw = d.textlength(t, font=lab)
+        pad = 22
+        box = ((W - tw) / 2 - pad, y - lab.size - 46, (W + tw) / 2 + pad, y - 18)
+        d.rounded_rectangle(box, radius=18, fill=cover.get("label_color", "#1f9d55"))
+        d.text(((W - tw) / 2, box[1] + 8), t, font=lab, fill="white")
+    for line in lines:
+        tw = d.textlength(line, font=big)
+        d.text(((W - tw) / 2, y), line, font=big, fill="white", stroke_width=10, stroke_fill="black")
+        y += lh
+    return img
+
+
+def render(scenes: list[dict], audio: Path | None, out: Path, cfg: dict, tail: float = 0.4,
+           cover: dict | None = None) -> None:
     """scenes: [{start, end, text, photo, clip, motion}] (초)."""
     style = {"_font": font(cfg.get("font_size", 68), cfg.get("font")), "y": cfg.get("caption_y", 0.5),
              "stroke": cfg.get("stroke", 7)}
@@ -135,6 +160,8 @@ def render(scenes: list[dict], audio: Path | None, out: Path, cfg: dict, tail: f
             "-movflags", "+faststart", "-t", f"{total:.3f}", str(out)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     written = 0
+    cover_img = cover_frame(cover, cover["_photo"], cfg) if cover and cover.get("lines") else None
+    cover_left = cfg.get("cover_frames", 2) if cover_img else 0
     try:
         for i, sc in enumerate(scenes):
             end = total if i == len(scenes) - 1 else sc["end"]
@@ -142,6 +169,11 @@ def render(scenes: list[dict], audio: Path | None, out: Path, cfg: dict, tail: f
             src = (clip_frames(sc["clip"], n, cfg.get("clip_start", 0.3)) if sc.get("clip")
                    else photo_frames(sc["photo"], n, sc["motion"]))
             for frame in src:
+                if cover_left > 0:            # 맨 앞 1~2프레임은 표지로 바꿔 끼운다
+                    cover_left -= 1
+                    frame = cover_img.copy()
+                    proc.stdin.write(draw_badges(frame, cfg, small).tobytes())
+                    continue
                 frame = draw_badges(draw_caption(frame, sc["text"], style), cfg, small)
                 proc.stdin.write(frame.tobytes())
             written += n

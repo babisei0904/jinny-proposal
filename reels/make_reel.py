@@ -11,7 +11,7 @@
     *.jpg *.png    숙소 사진. 사진을 지정하지 않은 줄은 파일 이름 순서대로 쓴다.
     clips/         (선택) 사진과 같은 이름의 AI 영상(mp4). 있으면 사진 대신 쓴다.
     bgm.mp3        (선택) 배경음악. 내레이션 아래 작게 깔린다.
-    reel.json      (선택) 설정. 아래 DEFAULTS 참고.
+    reel.json      (선택) 설정. 아래 DEFAULTS 참고. "cover" 를 넣으면 0초에 썸네일용 표지가 들어간다.
 
 결과는 숙소폴더/out/ 에 reel.mp4, reel.srt, timeline.json.
 """
@@ -46,6 +46,8 @@ DEFAULTS = {
     "handle": "",                  # 워터마크 (@계정)
     "font": None, "font_size": 68, "caption_y": 0.5, "stroke": 7,
     "bgm_volume": 0.12,
+    "cover": None,                 # {"photo": "05.jpg", "label": "평일 4만원대", "lines": ["바다 바로 앞", "노천탕 카라반"]}
+    "cover_frames": 2,             # 표지를 몇 프레임 넣을지 (2프레임 = 0.07초, 썸네일 전용)
     "clip_start": 0.3,             # AI 클립은 첫 프레임이 거의 정지라 0.3초부터 쓴다
 }
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
@@ -224,7 +226,14 @@ def main():
         print(f"[3/4] 장면 {len(scenes)}개, 평균 {sum(lens) / len(lens):.2f}초 "
               f"(최소 {min(lens):.2f}, 최대 {max(lens):.2f})  · 벤치마크 평균 1.16초")
         print("[4/4] 영상 만들기 (1080x1920, 30fps)")
-        render.render(scenes, audio if args.tts != "none" else None, out / "reel.mp4", cfg)
+        cover = cfg.get("cover")
+        if cover and cover.get("lines"):
+            cp = folder / cover["photo"] if cover.get("photo") else scenes[0]["photo"]
+            if not cp.exists():
+                raise SystemExit(f"표지 사진이 없습니다: {cp}")
+            cover = {**cover, "_photo": cp}
+            print(f"  표지(썸네일): {' / '.join(cover['lines'])}  ({cp.name})")
+        render.render(scenes, audio if args.tts != "none" else None, out / "reel.mp4", cfg, cover=cover)
 
     srt(scenes, out / "reel.srt")
     (out / "timeline.json").write_text(json.dumps(
