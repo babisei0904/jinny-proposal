@@ -139,7 +139,8 @@ def render(scenes: list[dict], audio: Path | None, out: Path, cfg: dict, tail: f
         for i, sc in enumerate(scenes):
             end = total if i == len(scenes) - 1 else sc["end"]
             n = max(1, round(end * FPS) - written)
-            src = clip_frames(sc["clip"], n) if sc.get("clip") else photo_frames(sc["photo"], n, sc["motion"])
+            src = (clip_frames(sc["clip"], n, cfg.get("clip_start", 0.3)) if sc.get("clip")
+                   else photo_frames(sc["photo"], n, sc["motion"]))
             for frame in src:
                 frame = draw_badges(draw_caption(frame, sc["text"], style), cfg, small)
                 proc.stdin.write(frame.tobytes())

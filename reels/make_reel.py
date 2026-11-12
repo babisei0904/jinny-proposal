@@ -46,6 +46,7 @@ DEFAULTS = {
     "handle": "",                  # 워터마크 (@계정)
     "font": None, "font_size": 68, "caption_y": 0.5, "stroke": 7,
     "bgm_volume": 0.12,
+    "clip_start": 0.3,             # AI 클립은 첫 프레임이 거의 정지라 0.3초부터 쓴다
 }
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 SENT_END = re.compile(r"(?:[.?!~]|[요다까죠])\s*$")
