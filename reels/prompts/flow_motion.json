@@ -1,5 +1,14 @@
 {
   "_about": "Google Flow(Veo) 사진->영상 프롬프트. 벤치마크 릴스 5개, 장면 91개에서 자주 나온 움직임을 장면 종류별로 묶었다. 최종 프롬프트 = presets[종류].prompt + ' ' + common_suffix. 릴스에는 클립 앞부분 1~1.5초만 쓰므로 움직임이 첫 프레임부터 시작해야 한다.",
+  "flow_settings": {
+    "mode": "Frames to Video (프레임으로 동영상 만들기)",
+    "model": "Veo 3.1 Lite",
+    "resolution": "720p",
+    "duration": "4s",
+    "aspect": "9:16",
+    "count": 1,
+    "_note": "360p 는 크레딧이 적지만 화질이 낮고 나뭇잎 같은 작은 움직임이 뭉개진다. 벤치마크 릴스가 모두 720x1280 이라 720p 로 충분하다."
+  },
   "common_suffix": "Motion starts immediately from the first frame. Smooth, slow, stabilized gimbal movement, natural real-estate cinematography, photorealistic. Keep the architecture, furniture, layout, colors and lighting exactly as in the reference image. Do not add or remove objects, people, text, logos or signs. No camera shake, no warping, no morphing.",
   "presets": {
     "hook_pov_door": {
