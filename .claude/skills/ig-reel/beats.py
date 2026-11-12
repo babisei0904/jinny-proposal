@@ -23,8 +23,12 @@ Usage
 
 import argparse
 import json
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ko  # noqa: E402  한국어 보정
 
 WORD_RE = re.compile(r"[A-Za-z0-9$%'’-]+")
 SENT_RE = re.compile(r"[^.!?]+[.!?]*")
@@ -57,13 +61,14 @@ def tc(seconds):
     return f"{int(m)}:{s:04.1f}"
 
 
-def split_beats(raw, wps):
+def split_beats(raw, wps, count=None):
     """One line is one beat, unless a line is too long to be one."""
+    count = count or (lambda t: len(words(t)))
     beats = []
     for line in [l.strip() for l in raw.splitlines()]:
         if not line:
             continue
-        if len(words(line)) / wps <= MAX_BEAT * 1.5:
+        if count(line) / wps <= MAX_BEAT * 1.5:
             beats.append(line)
             continue
         # Long paragraph: break it at sentence ends so the timings mean
@@ -72,7 +77,7 @@ def split_beats(raw, wps):
         buf = ""
         for part in parts:
             candidate = (buf + " " + part).strip()
-            if buf and len(words(candidate)) / wps > MAX_BEAT:
+            if buf and count(candidate) / wps > MAX_BEAT:
                 beats.append(buf)
                 buf = part
             else:
@@ -82,15 +87,24 @@ def split_beats(raw, wps):
     return beats
 
 
-def analyse(raw, wpm=165, target=None):
-    wps = wpm / 60.0
-    beats = split_beats(raw, wps)
+def analyse(raw, wpm=165, target=None, lang="auto", sps=None):
+    korean = ko.is_korean(raw) if lang == "auto" else lang == "ko"
+    if korean:
+        # 한국어: 음절 / 초당 음절.  "words" 자리에 음절 수가 들어간다.
+        wps = sps or ko.DEFAULT_SPS
+        count = ko.syllables
+        n_concrete = lambda t: sum(len(x) for x in ko.concrete(t))
+    else:
+        wps = wpm / 60.0
+        count = lambda t: len(words(t))
+        n_concrete = lambda t: len(CONCRETE_RE.findall(t))
+    beats = split_beats(raw, wps, count)
     if not beats:
         return None
 
     rows, clock = [], 0.0
     for i, text in enumerate(beats):
-        n = len(words(text))
+        n = count(text)
         dur = n / wps
         rows.append({
             "n": i + 1,
@@ -98,7 +112,7 @@ def analyse(raw, wpm=165, target=None):
             "dur": round(dur, 2),
             "words": n,
             "text": text,
-            "concrete": len(CONCRETE_RE.findall(text)),
+            "concrete": n_concrete(text),
             "label": "",
             "flags": [],
         })
@@ -117,20 +131,26 @@ def analyse(raw, wpm=165, target=None):
 
     notes = []
     if rows[0]["dur"] > HOOK_WINDOW:
-        rows[0]["flags"].append(f"hook runs {rows[0]['dur']:.1f}s, past the {HOOK_WINDOW:.0f}s mark")
-        notes.append(f"Beat 1 takes {rows[0]['dur']:.1f}s to say. Cut it to "
+        rows[0]["flags"].append(f"훅이 {rows[0]['dur']:.1f}초, {HOOK_WINDOW:.0f}초 넘음" if korean else
+                                f"hook runs {rows[0]['dur']:.1f}s, past the {HOOK_WINDOW:.0f}s mark")
+        notes.append(f"1번 장면을 말하는 데 {rows[0]['dur']:.1f}초. {int(HOOK_WINDOW * wps)}음절 "
+                     "이하로 줄여라. 아니면 훅이 끝나기 전에 이미 넘겨진다." if korean else
+                     f"Beat 1 takes {rows[0]['dur']:.1f}s to say. Cut it to "
                      f"{int(HOOK_WINDOW * wps)} words or fewer, or the hook lands after "
                      "the decision has been made.")
     if rows[0]["concrete"] == 0:
-        notes.append("Beat 1 has no number and no name in it. Hooks without something "
+        notes.append("1번 장면에 숫자도 지명도 없다. 확인할 게 없는 훅은 넘겨진다." if korean else
+                     "Beat 1 has no number and no name in it. Hooks without something "
                      "checkable are the ones that get scrolled.")
 
     for r in rows:
         if r["dur"] > MAX_BEAT:
-            r["flags"].append(f"{r['dur']:.1f}s on one beat")
+            r["flags"].append(f"한 장면에 {r['dur']:.1f}초" if korean else f"{r['dur']:.1f}s on one beat")
     long_beats = [r["n"] for r in rows if r["dur"] > MAX_BEAT]
     if long_beats:
-        notes.append(f"Beat(s) {', '.join(map(str, long_beats))} run past {MAX_BEAT:.0f}s. "
+        notes.append(f"{', '.join(map(str, long_beats))}번 장면이 {MAX_BEAT:.0f}초를 넘는다. 문장을 "
+                     "쪼개거나 그 안에서 화면을 바꿔라. 멈춘 화면에서 사람들이 나간다." if korean else
+                     f"Beat(s) {', '.join(map(str, long_beats))} run past {MAX_BEAT:.0f}s. "
                      "Either split the line or change what is on screen inside it. "
                      "A static frame is where people leave.")
 
@@ -140,16 +160,27 @@ def analyse(raw, wpm=165, target=None):
             run += 1
             start = start if start is not None else r["n"]
             if run == ABSTRACT_RUN:
-                notes.append(f"Beats {start}-{r['n']} have nothing concrete in them. "
+                notes.append(f"{start}~{r['n']}번 장면에 구체적인 게 없다. 숫자·지명·가격 중 "
+                             "하나를 넣어라." if korean else
+                             f"Beats {start}-{r['n']} have nothing concrete in them. "
                              "Put a number, a name or a price in one of them.")
         else:
             run, start = 0, None
 
     # Does the last line hand you back to the first one?
-    first = {w.lower() for w in words(rows[0]["text"]) if w.lower() not in STOPWORDS}
-    last = {w.lower() for w in words(rows[-1]["text"]) if w.lower() not in STOPWORDS}
+    if korean:
+        first, last = ko.content_stems(rows[0]["text"]), ko.content_stems(rows[-1]["text"])
+    else:
+        first = {w.lower() for w in words(rows[0]["text"]) if w.lower() not in STOPWORDS}
+        last = {w.lower() for w in words(rows[-1]["text"]) if w.lower() not in STOPWORDS}
     loop = sorted(pretty(w) for w in first & last)
-    if loop:
+    if loop and korean:
+        notes.append(f"루프 있음: 마지막 장면이 훅의 \"{', '.join(loop[:3])}\"를 다시 말한다. "
+                     "두 번째 재생은 공짜 도달이다.")
+    elif korean:
+        notes.append("루프 없음. 마지막 장면이 훅과 겹치는 말이 없어서 밋밋하게 끝난다. "
+                     "1번 장면의 단어 하나를 다시 쓰는 게 가장 싼 재생이다.")
+    elif loop:
         notes.append(f"Loops: the last beat repeats \"{', '.join(loop[:3])}\" from the hook. "
                      "Second watches are free reach.")
     else:
@@ -158,7 +189,15 @@ def analyse(raw, wpm=165, target=None):
 
     if target:
         delta = total - target
-        if abs(delta) <= target * 0.1:
+        if korean:
+            if abs(delta) <= target * 0.1:
+                notes.append(f"길이 적정 ({total:.1f}초 / 목표 {target}초).")
+            elif delta > 0:
+                notes.append(f"목표보다 {delta:.1f}초 김. 약 {int(delta * wps)}음절 줄여라.")
+            else:
+                notes.append(f"목표보다 {-delta:.1f}초 짧음. {int(-delta * wps)}음절 더 쓰거나 "
+                             "짧게 찍어라. 보통은 짧은 게 맞다.")
+        elif abs(delta) <= target * 0.1:
             notes.append(f"Length is on target ({total:.1f}s against {target}s).")
         elif delta > 0:
             notes.append(f"{delta:.1f}s over target. Cut about {int(delta * wps)} words.")
@@ -167,6 +206,8 @@ def analyse(raw, wpm=165, target=None):
                          "or shoot it short. Short is usually right.")
 
     return {
+        "lang": "ko" if korean else "en",
+        "sps": round(wps, 2) if korean else None,
         "wpm": wpm, "target": target,
         "total_seconds": round(total, 2),
         "total_words": sum(r["words"] for r in rows),
@@ -176,8 +217,12 @@ def analyse(raw, wpm=165, target=None):
 
 
 def render(a, out=sys.stdout):
-    head = (f"BEAT SHEET  ·  {a['total_words']} words  ·  ~{a['total_seconds']:.1f}s "
-            f"at {a['wpm']} wpm" + (f"  ·  target {a['target']}s" if a["target"] else ""))
+    if a.get("lang") == "ko":
+        head = (f"BEAT SHEET  ·  {a['total_words']}음절  ·  ~{a['total_seconds']:.1f}초 "
+                f"(초당 {a['sps']}음절)" + (f"  ·  목표 {a['target']}초" if a["target"] else ""))
+    else:
+        head = (f"BEAT SHEET  ·  {a['total_words']} words  ·  ~{a['total_seconds']:.1f}s "
+                f"at {a['wpm']} wpm" + (f"  ·  target {a['target']}s" if a["target"] else ""))
     print("\n" + head, file=out)
     print("=" * max(len(head), 72), file=out)
     for r in a["beats"]:
@@ -196,11 +241,15 @@ def main():
     ap.add_argument("input", nargs="?", default="-", help="script file, or - for stdin")
     ap.add_argument("--wpm", type=float, default=165, help="speaking rate (default 165)")
     ap.add_argument("--target", type=float, help="target length in seconds")
+    ap.add_argument("--lang", choices=["auto", "en", "ko"], default="auto",
+                    help="auto: 한글이 많으면 한국어 모드")
+    ap.add_argument("--sps", type=float,
+                    help=f"한국어 말하기 속도, 초당 음절 (기본 {ko.DEFAULT_SPS})")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
     raw = sys.stdin.read() if args.input == "-" else open(args.input, encoding="utf-8").read()
-    a = analyse(raw, wpm=args.wpm, target=args.target)
+    a = analyse(raw, wpm=args.wpm, target=args.target, lang=args.lang, sps=args.sps)
     if not a:
         print("empty script", file=sys.stderr)
         sys.exit(2)

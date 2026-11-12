@@ -40,6 +40,23 @@ python3 beats.py script.txt --target 30     # timed beat sheet before you shoot
    file, and it is the user's own evidence about which formulas are working in
    their niche right now. It beats the defaults in this file.
 
+## 한국어 대본 (Korean scripts)
+
+`hookscore.py` 와 `beats.py` 는 한글이 영문보다 많으면 자동으로 한국어 모드로 바뀐다
+(`ko.py`). 기준이 영어와 다르니 아래를 따른다.
+
+- **길이는 음절로 잰다.** 숫자는 읽는 소리로 센다 (420만원 = 사백이십만원 = 6음절).
+  기본 속도는 초당 6.5음절. 벤치마킹 릴스를 실측했거나 본인 속도를 알면
+  `beats.py script.txt --target 20 --sps 7.2` 처럼 덮어쓴다.
+- **훅은 8~20음절**, 3초 안. 화면 자막 두 줄(공백 빼고 28자)을 넘기지 않는다.
+- **화면 자막 카드는 공백 빼고 12자 이내.** 영어 "6 words" 규칙의 한국어판.
+- **구체성** = 숫자+단위(3박, 12만원, 2시간), 말로 한 숫자(두 시간, 하루, 반값),
+  지명·브랜드. 지명 목록은 `ko.py` 의 `KO_PROPER` 에 있고 니치에 맞게 고쳐 쓴다.
+- **말 걸기**: 한국어는 "당신"을 안 쓴다. 권유·명령(~하세요), 질문(~나요?),
+  가정(~하면)이 시청자를 부르는 방식이다.
+- **금지 시작**: "안녕하세요 여러분", "오늘은 ~ 알려드릴게요", "넘기지 마세요".
+- 대본은 한 줄에 한 장면. 줄바꿈이 곧 화면 전환이다.
+
 ## The shape
 
 A Reel is decided in the first two seconds and kept by the next five.
@@ -114,7 +131,7 @@ Write it separately, every time. It is read before it is heard.
 ## Rules that make the difference
 
 - **One idea per Reel.** If the script has two, you have two Reels. Say so.
-- **Numbers over adjectives.** "$4,200" beats "a lot". If the user has not
+- **Numbers over adjectives.** "4,200 dollars" beats "a lot". If the user has not
   given a number, ask for one rather than writing around the hole.
 - **Cut the intro.** No greeting, no "in this video", no name, no logo sting.
   The video starts at the sentence you would normally reach at second six.
